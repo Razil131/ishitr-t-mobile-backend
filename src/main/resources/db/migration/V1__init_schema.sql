@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS user_limits(
     resource_type E_RESOURCE_TYPE NOT NULL,
     limit_value BIGINT NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    CONSTRAINT fk_user_limit_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
+    CONSTRAINT fk_user_limit_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
     CONSTRAINT uq_user_limit_per_resource UNIQUE (user_id, resource_type)
 );
 

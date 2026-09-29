@@ -22,48 +22,50 @@ BEGIN
 END $$;
 
 -- Домен #1
---  #1
-CREATE TABLE IF NOT EXISTS users (
+
+-- #1
+CREATE TABLE IF NOT EXISTS users(
     id BIGSERIAL PRIMARY KEY,
     phone_number VARCHAR(20) NOT NULL UNIQUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
---  #2
+-- #2
 CREATE TABLE IF NOT EXISTS auth_codes(
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL,
-    code  VARCHAR(10) NOT NULL,
+    code VARCHAR(10) NOT NULL,
     expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    is_used BOOLEAN DEFAULT FALSE,
+    is_used BOOLEAN NOT NULL DEFAULT FALSE,
     CONSTRAINT fk_auth_codes_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
 );
 
---  #3
+-- #3
 CREATE TABLE IF NOT EXISTS user_sessions(
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL,
-    access_token VARCHAR(255) UNIQUE NOT NULL,
-    refresh_token VARCHAR(255) UNIQUE NOT NULL,
+    access_token VARCHAR(255) NOT NULL UNIQUE,
+    refresh_token VARCHAR(255) NOT NULL UNIQUE,
     expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
     revoked_at TIMESTAMP WITH TIME ZONE,
-    CONSTRAINT fk_user_sessions FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
+    CONSTRAINT fk_user_sessions_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
 );
 
 -- Домен #2
---  #4
+
+-- #4
 CREATE TABLE IF NOT EXISTS family_groups(
     id BIGSERIAL PRIMARY KEY,
     owner_id BIGINT NOT NULL,
     status E_GROUP_STATUS NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_family_groups FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE RESTRICT
+    CONSTRAINT fk_family_groups_owner FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE RESTRICT
 );
 
---  #5
+-- #5
 CREATE TABLE IF NOT EXISTS group_members(
     id BIGSERIAL PRIMARY KEY,
-    group_id BIGINT NOT NULL ,
+    group_id BIGINT NOT NULL,
     user_id BIGINT NOT NULL,
     role E_ROLE NOT NULL DEFAULT 'MEMBER',
     status E_MEMBER_STATUS NOT NULL DEFAULT 'ACTIVE',
@@ -73,6 +75,7 @@ CREATE TABLE IF NOT EXISTS group_members(
 );
 
 -- Домен #3
+
 -- #6
 CREATE TABLE IF NOT EXISTS service_packages(
     id BIGSERIAL PRIMARY KEY,
@@ -80,6 +83,7 @@ CREATE TABLE IF NOT EXISTS service_packages(
     total_traffic BIGINT NOT NULL,
     total_minutes BIGINT NOT NULL
 );
+
 -- #7
 CREATE TABLE IF NOT EXISTS group_subscriptions(
     id BIGSERIAL PRIMARY KEY,
@@ -95,14 +99,17 @@ CREATE TABLE IF NOT EXISTS group_subscriptions(
 CREATE TABLE IF NOT EXISTS user_limits(
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL,
+    group_id BIGINT NOT NULL,
     resource_type E_RESOURCE_TYPE NOT NULL,
     limit_value BIGINT NOT NULL,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    CONSTRAINT fk_user_limit_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
-    CONSTRAINT uq_user_limit_per_resource UNIQUE (user_id, resource_type)
+    is_blocked BOOLEAN NOT NULL DEFAULT FALSE,
+    CONSTRAINT fk_user_limits_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_user_limits_group_id FOREIGN KEY (group_id) REFERENCES family_groups(id) ON DELETE RESTRICT,
+    CONSTRAINT uq_user_limits_per_group_resource UNIQUE (user_id, group_id, resource_type)
 );
 
 -- Домен #4
+
 -- #9
 CREATE TABLE IF NOT EXISTS group_package_balances(
     id BIGSERIAL PRIMARY KEY,
@@ -111,7 +118,7 @@ CREATE TABLE IF NOT EXISTS group_package_balances(
     remaining_minutes BIGINT NOT NULL,
     remaining_traffic BIGINT NOT NULL,
     CONSTRAINT fk_group_package_balance_group_id FOREIGN KEY (group_id) REFERENCES family_groups(id) ON DELETE RESTRICT,
-    CONSTRAINT uq_group_balance UNIQUE (group_id, period_id)
+    CONSTRAINT uq_group_package_balance UNIQUE (group_id, period_id)
 );
 
 -- #10
@@ -128,6 +135,7 @@ CREATE TABLE IF NOT EXISTS user_usage(
 );
 
 -- Домен #5
+
 -- #11
 CREATE TABLE IF NOT EXISTS consumption_events(
     event_id BIGINT PRIMARY KEY,
@@ -151,7 +159,8 @@ CREATE TABLE IF NOT EXISTS hourly_usage_stats(
     hour_start TIMESTAMP WITH TIME ZONE NOT NULL,
     amount BIGINT NOT NULL,
     CONSTRAINT fk_hourly_usage_stats_group_id FOREIGN KEY (group_id) REFERENCES family_groups(id) ON DELETE RESTRICT,
-    CONSTRAINT fk_hourly_usage_stats_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
+    CONSTRAINT fk_hourly_usage_stats_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
+    CONSTRAINT uq_hourly_usage_stats UNIQUE (user_id, group_id, period_id, resource_type, hour_start)
 );
 
 -- #13
@@ -164,7 +173,8 @@ CREATE TABLE IF NOT EXISTS daily_usage_stats(
     date DATE NOT NULL,
     amount BIGINT NOT NULL,
     CONSTRAINT fk_daily_usage_stats_group_id FOREIGN KEY (group_id) REFERENCES family_groups(id) ON DELETE RESTRICT,
-    CONSTRAINT fk_daily_usage_stats_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
+    CONSTRAINT fk_daily_usage_stats_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
+    CONSTRAINT uq_daily_usage_stats UNIQUE (user_id, group_id, period_id, resource_type, date)
 );
 
 -- #14
@@ -175,10 +185,12 @@ CREATE TABLE IF NOT EXISTS archived_period_usage_stats(
     total_minutes BIGINT NOT NULL,
     total_traffic BIGINT NOT NULL,
     archived_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_archived_period_usage_stats_group_id FOREIGN KEY (group_id) REFERENCES family_groups(id) ON DELETE RESTRICT
+    CONSTRAINT fk_archived_period_usage_stats_group_id FOREIGN KEY (group_id) REFERENCES family_groups(id) ON DELETE RESTRICT,
+    CONSTRAINT uq_archived_period_usage UNIQUE (group_id, period_id)
 );
 
 -- Домен #6
+
 -- #15
 CREATE TABLE IF NOT EXISTS notification_thresholds(
     id BIGSERIAL PRIMARY KEY,
@@ -188,7 +200,11 @@ CREATE TABLE IF NOT EXISTS notification_thresholds(
     threshold_percent INT NOT NULL CHECK (threshold_percent BETWEEN 1 AND 100),
     scope_type E_SCOPE_TYPE NOT NULL,
     CONSTRAINT fk_notification_thresholds_group_id FOREIGN KEY (group_id) REFERENCES family_groups(id) ON DELETE RESTRICT,
-    CONSTRAINT fk_notification_thresholds_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
+    CONSTRAINT fk_notification_thresholds_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
+    CONSTRAINT chk_notification_threshold_scope CHECK (
+        (scope_type = 'USER' AND user_id IS NOT NULL) OR
+        (scope_type = 'GROUP' AND group_id IS NOT NULL)
+    )
 );
 
 -- #16
@@ -199,7 +215,8 @@ CREATE TABLE IF NOT EXISTS notification_logs(
     period_id BIGINT NOT NULL,
     sent_at TIMESTAMP WITH TIME ZONE NOT NULL,
     CONSTRAINT fk_notification_logs_threshold_id FOREIGN KEY (threshold_id) REFERENCES notification_thresholds(id) ON DELETE RESTRICT,
-    CONSTRAINT fk_notification_logs_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
+    CONSTRAINT fk_notification_logs_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
+    CONSTRAINT uq_notification_logs_per_period UNIQUE (user_id, threshold_id, period_id)
 );
 
 -- #17
@@ -218,20 +235,41 @@ CREATE TABLE IF NOT EXISTS audit_logs(
 
 -- INDEXES
 
-
 -- Домен #1
 CREATE INDEX IF NOT EXISTS idx_auth_codes_user_id ON auth_codes(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id);
+
+CREATE INDEX IF NOT EXISTS idx_auth_codes_active 
+    ON auth_codes(user_id, code) 
+    WHERE is_used = FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_user_sessions_active 
+    ON user_sessions(user_id, access_token) 
+    WHERE revoked_at IS NULL;
 
 -- Домен #2
 CREATE INDEX IF NOT EXISTS idx_family_groups_owner_id ON family_groups(owner_id);
 CREATE INDEX IF NOT EXISTS idx_group_members_group_id ON group_members(group_id);
 CREATE INDEX IF NOT EXISTS idx_group_members_user_id ON group_members(user_id);
 
+-- BR-02
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_active_owner 
+    ON family_groups(owner_id) 
+    WHERE status = 'ACTIVE';
+
+-- BR-01
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_active_group_member 
+    ON group_members(user_id) 
+    WHERE status = 'ACTIVE';
+
 -- Домен #3
 CREATE INDEX IF NOT EXISTS idx_group_subscriptions_group_id ON group_subscriptions(group_id);
 CREATE INDEX IF NOT EXISTS idx_group_subscriptions_package_id ON group_subscriptions(package_id);
 CREATE INDEX IF NOT EXISTS idx_user_limits_user_id ON user_limits(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_limits_group_id ON user_limits(group_id);
+
+CREATE INDEX IF NOT EXISTS idx_group_subscriptions_active_period 
+    ON group_subscriptions(group_id, period_start, period_end);
 
 -- Домен #4
 CREATE INDEX IF NOT EXISTS idx_group_package_balances_group_id ON group_package_balances(group_id);
@@ -247,6 +285,16 @@ CREATE INDEX IF NOT EXISTS idx_daily_usage_stats_user_id ON daily_usage_stats(us
 CREATE INDEX IF NOT EXISTS idx_daily_usage_stats_group_id ON daily_usage_stats(group_id);
 CREATE INDEX IF NOT EXISTS idx_archived_period_stats_group_id ON archived_period_usage_stats(group_id);
 
+CREATE INDEX IF NOT EXISTS idx_consumption_events_unprocessed 
+    ON consumption_events(event_timestamp) 
+    WHERE processed_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_hourly_stats_lookup 
+    ON hourly_usage_stats(user_id, resource_type, hour_start);
+
+CREATE INDEX IF NOT EXISTS idx_daily_stats_lookup 
+    ON daily_usage_stats(group_id, resource_type, date);
+
 -- Домен #6
 CREATE INDEX IF NOT EXISTS idx_notification_thresholds_group_id ON notification_thresholds(group_id);
 CREATE INDEX IF NOT EXISTS idx_notification_thresholds_user_id ON notification_thresholds(user_id);
@@ -256,31 +304,5 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_group_id ON audit_logs(group_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_actor_user_id ON audit_logs(actor_user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_target_user_id ON audit_logs(target_user_id);
 
--- Остальные
-
-CREATE INDEX IF NOT EXISTS idx_consumption_events_unprocessed 
-    ON consumption_events(event_timestamp) 
-    WHERE processed_at IS NULL;
-
-CREATE INDEX IF NOT EXISTS idx_auth_codes_active 
-    ON auth_codes(user_id, code) 
-    WHERE is_used = FALSE;
-
-CREATE INDEX IF NOT EXISTS idx_user_sessions_active 
-    ON user_sessions(user_id, access_token) 
-    WHERE revoked_at IS NULL;
-
-CREATE INDEX IF NOT EXISTS idx_hourly_stats_lookup 
-    ON hourly_usage_stats(user_id, resource_type, hour_start);
-
-CREATE INDEX IF NOT EXISTS idx_daily_stats_lookup 
-    ON daily_usage_stats(group_id, resource_type, date);
-
 CREATE INDEX IF NOT EXISTS idx_audit_logs_group_timeline 
     ON audit_logs(group_id, created_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_group_subscriptions_active_period 
-    ON group_subscriptions(group_id, period_start, period_end);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_active_owner ON family_groups(owner_id) WHERE status = 'ACTIVE';
-CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_active_group_member ON group_members(user_id) WHERE status = 'ACTIVE';

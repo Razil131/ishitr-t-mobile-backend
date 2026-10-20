@@ -4,14 +4,9 @@ server:
 spring:
   application:
     name: backend
-  
+
   kafka:
     bootstrap-servers: localhost:9092
-    consumer:
-      group-id: tmobile-group
-      auto-offset-reset: earliest
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
 
   datasource:
     url: jdbc:postgresql://localhost:5432/tmobile_db

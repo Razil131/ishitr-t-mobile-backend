@@ -3,9 +3,9 @@ services:
     image: dockerhub.timeweb.cloud/library/postgres:16-alpine
     container_name: tmobile_postgres
     environment:
-      POSTGRES_DB: tmobile_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres_pwd
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     restart: always
@@ -36,3 +36,16 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
     depends_on:
       - kafka
+
+  generator:
+    build:
+      context: ../generator
+      dockerfile: Dockerfile
+    container_name: tmobile-generator
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    depends_on:
+      - kafka
+    restart: unless-stopped

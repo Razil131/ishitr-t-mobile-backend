@@ -42,3 +42,8 @@ out/
 Thumbs.db
 
 *.log
+
+application_local.yml
+
+.env
+env

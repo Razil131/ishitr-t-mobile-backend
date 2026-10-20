@@ -27,7 +27,7 @@ END $$;
 CREATE TABLE IF NOT EXISTS users(
     id BIGSERIAL PRIMARY KEY,
     phone_number VARCHAR(20) NOT NULL UNIQUE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL
 );
 
 -- #2
@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS family_groups(
     id BIGSERIAL PRIMARY KEY,
     owner_id BIGINT NOT NULL,
     status E_GROUP_STATUS NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     CONSTRAINT fk_family_groups_owner FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE RESTRICT
 );
 
@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS group_members(
     user_id BIGINT NOT NULL,
     role E_ROLE NOT NULL DEFAULT 'MEMBER',
     status E_MEMBER_STATUS NOT NULL DEFAULT 'ACTIVE',
-    joined_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    joined_at TIMESTAMP WITH TIME ZONE NOT NULL,
     CONSTRAINT fk_group_members_group_id FOREIGN KEY (group_id) REFERENCES family_groups(id) ON DELETE RESTRICT,
     CONSTRAINT fk_group_members_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
 );
@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS group_subscriptions(
     id BIGSERIAL PRIMARY KEY,
     group_id BIGINT NOT NULL,
     package_id BIGINT NOT NULL,
-    period_start TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    period_start TIMESTAMP WITH TIME ZONE NOT NULL,
     period_end TIMESTAMP WITH TIME ZONE NOT NULL,
     CONSTRAINT fk_group_subscriptions_group_id FOREIGN KEY (group_id) REFERENCES family_groups(id) ON DELETE RESTRICT,
     CONSTRAINT fk_group_subscriptions_package_id FOREIGN KEY (package_id) REFERENCES service_packages(id) ON DELETE RESTRICT
@@ -184,7 +184,7 @@ CREATE TABLE IF NOT EXISTS archived_period_usage_stats(
     period_id BIGINT NOT NULL,
     total_minutes BIGINT NOT NULL,
     total_traffic BIGINT NOT NULL,
-    archived_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    archived_at TIMESTAMP WITH TIME ZONE NOT NULL,
     CONSTRAINT fk_archived_period_usage_stats_group_id FOREIGN KEY (group_id) REFERENCES family_groups(id) ON DELETE RESTRICT,
     CONSTRAINT uq_archived_period_usage UNIQUE (group_id, period_id)
 );
@@ -227,7 +227,7 @@ CREATE TABLE IF NOT EXISTS audit_logs(
     action_type E_ACTION_TYPE NOT NULL,
     target_user_id BIGINT,
     details JSONB NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     CONSTRAINT fk_audit_logs_group_id FOREIGN KEY (group_id) REFERENCES family_groups(id) ON DELETE RESTRICT,
     CONSTRAINT fk_audit_logs_actor_id FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE RESTRICT,
     CONSTRAINT fk_audit_logs_target_id FOREIGN KEY (target_user_id) REFERENCES users(id) ON DELETE RESTRICT

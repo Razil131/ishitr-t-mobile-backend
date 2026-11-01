@@ -10,13 +10,13 @@ import java.time.ZoneId;
 public class VirtualClockService extends Clock {
     private long realStartTime = System.currentTimeMillis();
     private long virtualStartTime = System.currentTimeMillis();
-    private double multiplier = 1.0;
+    private int multiplier = 1;
     private boolean isPaused = false;
 
     private long pauseRealTime = 0;
     private long pauseVirtualTime = 0;
 
-    public synchronized void syncTime(long newVirtualStart, long newRealStart, double newMultiplier, boolean newIsPaused){
+    public synchronized void syncTime(long newVirtualStart, long newRealStart, int newMultiplier, boolean newIsPaused){
         this.virtualStartTime = newVirtualStart;
         this.realStartTime = newRealStart;
         this.multiplier = newMultiplier;
@@ -49,6 +49,6 @@ public class VirtualClockService extends Clock {
         return Instant.ofEpochMilli(getCurrentVirtualTime());
     }
 
-    public double getMultiplier() { return multiplier; }
+    public int getMultiplier() { return multiplier; }
     public boolean isPaused() { return isPaused; }
 }

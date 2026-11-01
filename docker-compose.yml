@@ -46,6 +46,9 @@ services:
       - "8082:8082"
     environment:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      BACKEND_API_BASE_URL: http://host.docker.internal:8080
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - kafka
     restart: unless-stopped

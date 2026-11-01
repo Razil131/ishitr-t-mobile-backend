@@ -47,3 +47,5 @@ application_local.yml
 
 .env
 env
+
+V2__seed_test_data.sql

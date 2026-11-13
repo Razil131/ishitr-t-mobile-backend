@@ -30,7 +30,7 @@ public class ConsumptionEventListener {
                     event.getEventId(),
                     event.getUserId(),
                     event.getResourceType(),
-                    event.getAmount(),
+                    event.getVolume(),
                     eventTimestamp,
                     event.getIsAnomaly(),
                     event.getGroupId()

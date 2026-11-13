@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
 @Entity
@@ -25,8 +26,8 @@ public class ConsumptionEventEntity {
     @Column(name = "resource_type", nullable = false)
     private ResourceType resourceType;
 
-    @Column(nullable = false)
-    private Double amount;
+    @Column(nullable = false, precision = 20, scale = 6)
+    private BigDecimal volume;
 
     @Column(name = "event_timestamp", nullable = false)
     private OffsetDateTime eventTimestamp;

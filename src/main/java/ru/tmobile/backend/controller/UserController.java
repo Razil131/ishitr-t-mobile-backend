@@ -1,10 +1,12 @@
 package ru.tmobile.backend.controller;
 
 import lombok.RequiredArgsConstructor;
+
 import org.springframework.web.bind.annotation.*;
 import ru.tmobile.backend.entity.FamilyGroupEntity;
 import ru.tmobile.backend.entity.GroupMemberEntity;
 import ru.tmobile.backend.entity.UserEntity;
+import ru.tmobile.backend.entity.GroupMemberEntity.MemberStatus;
 import ru.tmobile.backend.repository.FamilyGroupRepository;
 import ru.tmobile.backend.repository.GroupMemberRepository;
 import ru.tmobile.backend.repository.UserRepository;
@@ -25,7 +27,7 @@ public class UserController {
 
     @GetMapping("/active")
     public List<Long> getActiveUsers() {
-        return groupMemberRepository.findByStatus("ACTIVE")
+        return groupMemberRepository.findByStatus(MemberStatus.ACTIVE)
                 .stream()
                 .map(GroupMemberEntity::getUserId)
                 .collect(Collectors.toList());
@@ -60,7 +62,7 @@ public class UserController {
                     "group_id", member != null ? member.getGroupId() : 0L,
                     "group_name", groupName,
                     "role", member != null ? member.getRole().name() : "MEMBER",
-                    "status", member != null ? "ACTIVE" : "INACTIVE"
+                    "status", member != null ? member.getStatus().name() : "INACTIVE"
             );
         }).collect(Collectors.toList());
     }

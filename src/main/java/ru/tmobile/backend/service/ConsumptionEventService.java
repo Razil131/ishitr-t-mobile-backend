@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.tmobile.backend.entity.ConsumptionEventEntity;
 import ru.tmobile.backend.repository.ConsumptionEventRepository;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
 @Slf4j
@@ -21,7 +22,7 @@ public class ConsumptionEventService {
             String eventId,
             Long userId,
             String resourceType,
-            Double amount,
+            BigDecimal volume,
             OffsetDateTime eventTimestamp,
             Boolean isAnomaly,
             Long groupId
@@ -30,7 +31,7 @@ public class ConsumptionEventService {
         entity.setEventId(eventId);
         entity.setUserId(userId);
         entity.setResourceType(ConsumptionEventEntity.ResourceType.valueOf(resourceType));
-        entity.setAmount(amount);
+        entity.setVolume(volume);
         entity.setEventTimestamp(eventTimestamp);
         entity.setIsAnomaly(isAnomaly);
         entity.setProcessedAt(OffsetDateTime.now());

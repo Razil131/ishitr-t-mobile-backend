@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
+
 @Entity
 @Table(name = "service_packages")
 @Getter @Setter
@@ -16,9 +18,18 @@ public class ServicePackageEntity {
     @Column(nullable = false)
     private String name;
 
-    @Column(name = "total_traffic", nullable = false)
-    private Double totalTraffic;
+    @Column(name = "traffic_gb", nullable = false)
+    private Double trafficGb;
 
-    @Column(name = "total_minutes", nullable = false)
-    private Long totalMinutes;
+    @Column(nullable = false)
+    private Long minutes;
+
+    @Column(nullable = false)
+    private Long sms;
+
+    @Column(nullable = false, precision = 12, scale = 2)
+    private BigDecimal price;
+
+    @Column(columnDefinition = "TEXT")
+    private String description;
 }

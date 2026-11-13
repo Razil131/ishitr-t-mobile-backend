@@ -37,6 +37,6 @@ public class GroupMemberEntity {
     }
 
     public enum MemberStatus {
-        ACTIVE, BLOCKED
+        ACTIVE, EXCLUDED, LEAVE
     }
 }

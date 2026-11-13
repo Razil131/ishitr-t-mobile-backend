@@ -8,6 +8,8 @@ import org.springframework.web.server.ResponseStatusException;
 import ru.tmobile.backend.entity.ServicePackageEntity;
 import ru.tmobile.backend.repository.ServicePackageRepository;
 
+import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -22,12 +24,17 @@ public class TariffController {
     @GetMapping
     public List<Map<String, Object>> getTariffs() {
         return packageRepository.findAll().stream()
-                .map(p -> Map.<String, Object>of(
-                        "package_id", p.getId(),
-                        "name", p.getName(),
-                        "total_traffic", p.getTotalTraffic(),
-                        "total_minutes", p.getTotalMinutes()
-                ))
+                .map(p -> {
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("package_id", p.getId());
+                    map.put("name", p.getName());
+                    map.put("traffic_gb", p.getTrafficGb());
+                    map.put("minutes", p.getMinutes());
+                    map.put("sms", p.getSms());
+                    map.put("price", p.getPrice());
+                    map.put("description", p.getDescription());
+                    return map;
+                })
                 .collect(Collectors.toList());
     }
 
@@ -36,17 +43,23 @@ public class TariffController {
     public Map<String, Object> createTariff(@RequestBody Map<String, Object> body) {
         ServicePackageEntity entity = new ServicePackageEntity();
         entity.setName((String) body.get("name"));
-        entity.setTotalTraffic(((Number) body.get("total_traffic")).doubleValue());
-        entity.setTotalMinutes(((Number) body.get("total_minutes")).longValue());
+        entity.setTrafficGb(((Number) body.get("traffic_gb")).doubleValue());
+        entity.setMinutes(((Number) body.get("minutes")).longValue());
+        entity.setSms(body.containsKey("sms") ? ((Number) body.get("sms")).longValue() : 0L);
+        entity.setPrice(new BigDecimal(body.get("price").toString()));
+        entity.setDescription((String) body.getOrDefault("description", null));
 
         ServicePackageEntity saved = packageRepository.save(entity);
 
-        return Map.of(
-                "package_id", saved.getId(),
-                "name", saved.getName(),
-                "total_traffic", saved.getTotalTraffic(),
-                "total_minutes", saved.getTotalMinutes()
-        );
+        Map<String, Object> result = new HashMap<>();
+        result.put("package_id", saved.getId());
+        result.put("name", saved.getName());
+        result.put("traffic_gb", saved.getTrafficGb());
+        result.put("minutes", saved.getMinutes());
+        result.put("sms", saved.getSms());
+        result.put("price", saved.getPrice());
+        result.put("description", saved.getDescription());
+        return result;
     }
 
     @DeleteMapping("/{id}")

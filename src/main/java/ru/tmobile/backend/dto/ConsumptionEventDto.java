@@ -26,9 +26,9 @@ public class ConsumptionEventDto {
     @JsonProperty("resource_type")
     private String resourceType;
 
-    @NotNull(message = "amount is required")
-    @JsonProperty("amount")
-    private Double amount;
+    @NotNull(message = "volume is required")
+    @JsonProperty("volume")
+    private java.math.BigDecimal volume;
 
     @NotBlank(message = "event_timestamp is required")
     @JsonProperty("event_timestamp")

@@ -27,10 +27,7 @@ public class UserController {
 
     @GetMapping("/active")
     public List<Long> getActiveUsers() {
-        return groupMemberRepository.findByStatus(MemberStatus.ACTIVE)
-                .stream()
-                .map(GroupMemberEntity::getUserId)
-                .collect(Collectors.toList());
+        return groupMemberRepository.findUserIdsByStatus(MemberStatus.ACTIVE);
     }
 
     @GetMapping

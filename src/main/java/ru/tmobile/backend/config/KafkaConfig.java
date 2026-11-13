@@ -9,7 +9,11 @@ import org.springframework.kafka.annotation.EnableKafka;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
+import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
+import org.springframework.util.backoff.FixedBackOff;
+import ru.tmobile.backend.dto.ConsumptionEventDto;
 import ru.tmobile.backend.virtual_clock.TimeSyncConsumer.TimeChangeEvent;
 
 import java.util.HashMap;
@@ -70,6 +74,29 @@ public class KafkaConfig {
         ConcurrentKafkaListenerContainerFactory<String, String> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(stringConsumerFactory);
+        return factory;
+    }
+
+    @Bean
+    public ConsumerFactory<String, ConsumptionEventDto> consumptionEventConsumerFactory() {
+        Map<String, Object> props = baseConsumerProps();
+        ErrorHandlingDeserializer<ConsumptionEventDto> valueDeserializer =
+                new ErrorHandlingDeserializer<>(new JsonDeserializer<>(ConsumptionEventDto.class, false));
+        return new DefaultKafkaConsumerFactory<>(
+                props,
+                new StringDeserializer(),
+                valueDeserializer
+        );
+    }
+
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, ConsumptionEventDto>
+    consumptionEventKafkaListenerContainerFactory(
+            ConsumerFactory<String, ConsumptionEventDto> consumptionEventConsumerFactory) {
+        ConcurrentKafkaListenerContainerFactory<String, ConsumptionEventDto> factory =
+                new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(consumptionEventConsumerFactory);
+        factory.setCommonErrorHandler(new DefaultErrorHandler(new FixedBackOff(0L, 0L)));
         return factory;
     }
 }

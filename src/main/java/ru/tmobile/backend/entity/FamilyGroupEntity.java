@@ -3,6 +3,8 @@ package ru.tmobile.backend.entity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 
@@ -18,8 +20,8 @@ public class FamilyGroupEntity {
     @Column(name = "owner_id", nullable = false)
     private Long ownerId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(nullable = false, columnDefinition = "E_GROUP_STATUS")
     private GroupStatus status;
 
     @Column(name = "created_at", nullable = false)

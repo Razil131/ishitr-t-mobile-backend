@@ -130,9 +130,9 @@ public class FamilyGroupService {
         AuditLogEntity auditLogEntity = new AuditLogEntity();
         auditLogEntity.setGroupId(groupId);
         auditLogEntity.setActorUserId(actorId);
-        auditLogEntity.setAction(action);
+        auditLogEntity.setActionType(action);
         auditLogEntity.setCreatedAt(now);
-        auditLogEntity.setPayload(details);
+        auditLogEntity.setDetails(details);
         auditLogEntity.setTargetUserId(targetId);
         return auditLogEntity;
     }
@@ -154,7 +154,7 @@ public class FamilyGroupService {
         Long groupId = group.getId();
         // TODO добавить проверку того что вызывающий владелец группы
 
-        if (!userRepository.findById(userId).isPresent()){
+        if (userRepository.findById(userId).isEmpty()){
             throw new BusinessRuleViolationException(
                 "USER_NOT_FOUND",
                 "User not found: " + userId,
@@ -250,7 +250,7 @@ public class FamilyGroupService {
             .orElseThrow(() -> new BusinessRuleViolationException("USER_NOT_FOUND", "Old owner not found: " + oldOwnerId, HttpStatus.NOT_FOUND));
 
         GroupMemberEntity newOwner = groupMemberRepository.findByGroupIdAndUserIdAndStatus(groupId,newOwnerId,MemberStatus.ACTIVE)
-                .orElseThrow(() -> new BusinessRuleViolationException("BR_24_NEW_OWNER_NOT_MEMBER","user is not in the target group: " + groupId,HttpStatus.BAD_REQUEST));
+            .orElseThrow(() -> new BusinessRuleViolationException("BR_24_NEW_OWNER_NOT_MEMBER","user is not in the target group: " + groupId,HttpStatus.BAD_REQUEST));
 
         // TODO добавить проверку того что вызывающий владелец группы
 

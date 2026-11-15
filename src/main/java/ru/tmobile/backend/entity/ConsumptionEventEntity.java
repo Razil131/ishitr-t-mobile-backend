@@ -3,8 +3,10 @@ package ru.tmobile.backend.entity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+import ru.tmobile.backend.entity.enums.ResourceType;
 
-import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
 @Entity
@@ -22,23 +24,17 @@ public class ConsumptionEventEntity {
     @Column(name = "group_id")
     private Long groupId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "resource_type", nullable = false)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "resource_type", nullable = false, columnDefinition = "E_RESOURCE_TYPE")
     private ResourceType resourceType;
 
-    @Column(nullable = false, precision = 20, scale = 6)
-    private BigDecimal volume;
+    @Column(name = "amount", nullable = false)
+    private Double amount;
 
     @Column(name = "event_timestamp", nullable = false)
     private OffsetDateTime eventTimestamp;
 
-    @Column(name = "is_anomaly", nullable = false)
-    private Boolean isAnomaly = false;
-
     @Column(name = "processed_at")
     private OffsetDateTime processedAt;
 
-    public enum ResourceType {
-        TRAFFIC, MINUTES
-    }
 }

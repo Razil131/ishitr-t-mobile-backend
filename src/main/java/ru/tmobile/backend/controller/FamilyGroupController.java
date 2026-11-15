@@ -14,6 +14,8 @@ import ru.tmobile.backend.dto.TransferOwnershipRequest;
 import ru.tmobile.backend.entity.FamilyGroupEntity;
 import ru.tmobile.backend.entity.GroupMemberEntity;
 import ru.tmobile.backend.entity.UserEntity;
+import ru.tmobile.backend.exception.BusinessRuleViolationException;
+import ru.tmobile.backend.entity.FamilyGroupEntity.GroupStatus;
 import ru.tmobile.backend.entity.GroupMemberEntity.MemberStatus;
 import ru.tmobile.backend.repository.FamilyGroupRepository;
 import ru.tmobile.backend.repository.GroupMemberRepository;
@@ -54,6 +56,25 @@ public class FamilyGroupController {
             );
         }).collect(Collectors.toList());
     }
+
+    @GetMapping("/{groupId}")
+    public Map<String, Object> getGroup(@PathVariable Long groupId) {
+        FamilyGroupEntity group = groupRepository.findByIdAndStatus(groupId, GroupStatus.ACTIVE)
+            .orElseThrow(() -> new BusinessRuleViolationException("GROUP_NOT_FOUND", "Group not found: " + groupId, HttpStatus.NOT_FOUND));
+
+        List<GroupMemberEntity> members = memberRepository.findByGroupIdAndStatus(group.getId(), MemberStatus.ACTIVE);
+        Optional<UserEntity> owner = userRepository.findById(group.getOwnerId());
+        return Map.<String, Object>of(
+                "group_id", group.getId(),
+                "owner_id", group.getOwnerId(),
+                "owner_name", owner.map(UserEntity::getName).orElse(""),
+                "status", group.getStatus().name(),
+                "created_at", group.getCreatedAt().toString(),
+                "members_count", members.size(),
+                "name", owner.map(o -> "Семья " + o.getName().split(" ")[0]).orElse("Группа #" + group.getId())
+        );
+    }
+
     @PostMapping
     public ResponseEntity<FamilyGroupEntity> createGroup(@Valid @RequestBody FamilyGroupCreateRequest request) {
         FamilyGroupEntity group = familyGroupService.createGroup(

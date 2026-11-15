@@ -23,6 +23,11 @@ public class ConsumptionEventListener {
             return;
         }
 
+        if (event.getEventTimestamp() == null || event.getEventId() == null || event.getUserId() == null || event.getResourceType() == null) {
+            log.warn("Received consumption event with missing required fields, skipping: {}", event);
+            return;
+        }
+
         try {
             OffsetDateTime eventTimestamp = OffsetDateTime.parse(event.getEventTimestamp());
 
@@ -30,9 +35,8 @@ public class ConsumptionEventListener {
                     event.getEventId(),
                     event.getUserId(),
                     event.getResourceType(),
-                    event.getVolume(),
+                    event.getAmount(),
                     eventTimestamp,
-                    event.getIsAnomaly(),
                     event.getGroupId()
             );
         } catch (Exception e) {

@@ -23,16 +23,16 @@ public class AuditLogEntity {
     @Column(name = "actor_user_id", nullable = false)
     private Long actorUserId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "action", nullable = false)
-    private ActionType action;
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "action_type", nullable = false, columnDefinition = "E_ACTION_TYPE")
+    private ActionType actionType;
 
     @Column(name = "target_user_id")
     private Long targetUserId;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "payload", columnDefinition = "jsonb")
-    private String payload;
+    @Column(name = "details", columnDefinition = "jsonb")
+    private String details;
 
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;

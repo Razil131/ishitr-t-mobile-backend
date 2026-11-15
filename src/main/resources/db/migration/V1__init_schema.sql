@@ -83,11 +83,8 @@ CREATE TABLE IF NOT EXISTS group_members(
 CREATE TABLE IF NOT EXISTS service_packages(
     id BIGSERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
-    traffic_gb DOUBLE PRECISION NOT NULL,
-    minutes BIGINT NOT NULL,
-    sms BIGINT NOT NULL DEFAULT 0,
-    price NUMERIC(12,2) NOT NULL,
-    description TEXT
+    total_traffic DOUBLE PRECISION NOT NULL,
+    total_minutes BIGINT NOT NULL
 );
 
 -- #7
@@ -121,11 +118,9 @@ CREATE TABLE IF NOT EXISTS group_package_balances(
     id BIGSERIAL PRIMARY KEY,
     group_id BIGINT NOT NULL,
     period_id BIGINT NOT NULL,
-    minutes_remainder BIGINT NOT NULL,
-    traffic_remainder DOUBLE PRECISION NOT NULL,
-    sms_remainder BIGINT NOT NULL DEFAULT 0,
+    remaining_minutes BIGINT NOT NULL,
+    remaining_traffic DOUBLE PRECISION NOT NULL,
     CONSTRAINT fk_group_package_balances_group_id FOREIGN KEY (group_id) REFERENCES family_groups(id) ON DELETE RESTRICT,
-    CONSTRAINT fk_group_package_balances_period_id FOREIGN KEY (period_id) REFERENCES group_subscriptions(id) ON DELETE RESTRICT,
     CONSTRAINT uq_group_package_balances UNIQUE (group_id, period_id)
 );
 
@@ -135,11 +130,10 @@ CREATE TABLE IF NOT EXISTS user_usage(
     user_id BIGINT NOT NULL,
     group_id BIGINT NOT NULL,
     resource_type E_RESOURCE_TYPE NOT NULL,
-    volume NUMERIC(20,6) NOT NULL,
+    used_value DOUBLE PRECISION NOT NULL,
     period_id BIGINT NOT NULL,
     CONSTRAINT fk_user_usage_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
     CONSTRAINT fk_user_usage_group_id FOREIGN KEY (group_id) REFERENCES family_groups(id) ON DELETE RESTRICT,
-    CONSTRAINT fk_user_usage_period_id FOREIGN KEY (period_id) REFERENCES group_subscriptions(id) ON DELETE RESTRICT,
     CONSTRAINT uq_user_usage UNIQUE (user_id, group_id, resource_type, period_id)
 );
 
@@ -150,10 +144,9 @@ CREATE TABLE IF NOT EXISTS consumption_events(
     event_id VARCHAR(36) PRIMARY KEY,
     user_id BIGINT NOT NULL,
     group_id BIGINT,
-    resource_type VARCHAR(20) NOT NULL,
-    volume NUMERIC(20,6) NOT NULL,
+    resource_type E_RESOURCE_TYPE NOT NULL,
+    amount DOUBLE PRECISION NOT NULL,
     event_timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
-    is_anomaly BOOLEAN NOT NULL DEFAULT FALSE,
     processed_at TIMESTAMP WITH TIME ZONE,
     CONSTRAINT fk_consumption_event_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
     CONSTRAINT fk_consumption_event_group_id FOREIGN KEY (group_id) REFERENCES family_groups(id) ON DELETE SET NULL
@@ -164,9 +157,10 @@ CREATE TABLE IF NOT EXISTS hourly_usage_stats(
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL,
     group_id BIGINT NOT NULL,
+    period_id BIGINT NOT NULL,
     resource_type E_RESOURCE_TYPE NOT NULL,
     hour_start TIMESTAMP WITH TIME ZONE NOT NULL,
-    volume NUMERIC(20,6) NOT NULL,
+    amount DOUBLE PRECISION NOT NULL,
     CONSTRAINT fk_hourly_usage_stats_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
     CONSTRAINT fk_hourly_usage_stats_group_id FOREIGN KEY (group_id) REFERENCES family_groups(id) ON DELETE RESTRICT,
     CONSTRAINT uq_hourly_usage_stats UNIQUE (user_id, group_id, resource_type, hour_start)
@@ -177,9 +171,10 @@ CREATE TABLE IF NOT EXISTS daily_usage_stats(
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL,
     group_id BIGINT NOT NULL,
+    period_id BIGINT NOT NULL,
     resource_type E_RESOURCE_TYPE NOT NULL,
     date DATE NOT NULL,
-    volume NUMERIC(20,6) NOT NULL,
+    amount DOUBLE PRECISION NOT NULL,
     CONSTRAINT fk_daily_usage_stats_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
     CONSTRAINT fk_daily_usage_stats_group_id FOREIGN KEY (group_id) REFERENCES family_groups(id) ON DELETE RESTRICT,
     CONSTRAINT uq_daily_usage_stats UNIQUE (user_id, group_id, resource_type, date)
@@ -190,13 +185,11 @@ CREATE TABLE IF NOT EXISTS archived_period_usage_stats(
     id BIGSERIAL PRIMARY KEY,
     group_id BIGINT NOT NULL,
     period_id BIGINT NOT NULL,
-    resource_type E_RESOURCE_TYPE NOT NULL,
-    traffic_volume DOUBLE PRECISION NOT NULL,
-    minutes_volume BIGINT NOT NULL,
-    sms_volume BIGINT NOT NULL DEFAULT 0,
+    total_minutes BIGINT NOT NULL,
+    total_traffic DOUBLE PRECISION NOT NULL,
+    archived_at TIMESTAMP WITH TIME ZONE NOT NULL,
     CONSTRAINT fk_archived_period_stats_group_id FOREIGN KEY (group_id) REFERENCES family_groups(id) ON DELETE RESTRICT,
-    CONSTRAINT fk_archived_period_stats_period_id FOREIGN KEY (period_id) REFERENCES group_subscriptions(id) ON DELETE RESTRICT,
-    CONSTRAINT uq_archived_period_stats UNIQUE (group_id, period_id, resource_type)
+    CONSTRAINT uq_archived_period_stats UNIQUE (group_id, period_id)
 );
 
 -- Домен #6
@@ -204,14 +197,13 @@ CREATE TABLE IF NOT EXISTS archived_period_usage_stats(
 -- #15
 CREATE TABLE IF NOT EXISTS notification_thresholds(
     id BIGSERIAL PRIMARY KEY,
-    group_id BIGINT NOT NULL,
     user_id BIGINT,
-    scope_type E_SCOPE_TYPE NOT NULL,
+    group_id BIGINT,
     resource_type E_RESOURCE_TYPE NOT NULL,
-    threshold_value INTEGER NOT NULL,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    CONSTRAINT fk_notification_thresholds_group_id FOREIGN KEY (group_id) REFERENCES family_groups(id) ON DELETE RESTRICT,
-    CONSTRAINT fk_notification_thresholds_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
+    threshold_percent INTEGER NOT NULL,
+    scope_type E_SCOPE_TYPE NOT NULL,
+    CONSTRAINT fk_notification_thresholds_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_notification_thresholds_group_id FOREIGN KEY (group_id) REFERENCES family_groups(id) ON DELETE RESTRICT
 );
 
 -- #16
@@ -219,8 +211,8 @@ CREATE TABLE IF NOT EXISTS notification_logs(
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL,
     threshold_id BIGINT NOT NULL,
+    period_id BIGINT NOT NULL,
     sent_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    message TEXT NOT NULL,
     CONSTRAINT fk_notification_logs_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
     CONSTRAINT fk_notification_logs_threshold_id FOREIGN KEY (threshold_id) REFERENCES notification_thresholds(id) ON DELETE RESTRICT
 );
@@ -230,9 +222,9 @@ CREATE TABLE IF NOT EXISTS audit_logs(
     id BIGSERIAL PRIMARY KEY,
     group_id BIGINT NOT NULL,
     actor_user_id BIGINT NOT NULL,
-    action E_ACTION_TYPE NOT NULL,
+    action_type E_ACTION_TYPE NOT NULL,
     target_user_id BIGINT,
-    payload JSONB,
+    details JSONB,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     CONSTRAINT fk_audit_logs_group_id FOREIGN KEY (group_id) REFERENCES family_groups(id) ON DELETE RESTRICT,
     CONSTRAINT fk_audit_logs_actor_user_id FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE RESTRICT,

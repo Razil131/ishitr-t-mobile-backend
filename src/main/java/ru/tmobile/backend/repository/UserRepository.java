@@ -10,4 +10,6 @@ import ru.tmobile.backend.entity.UserEntity;
 public interface UserRepository extends JpaRepository<UserEntity, Long> {
     Optional<UserEntity> findById(Long id);
     List<UserEntity> findByIdIn(List<Long> ids);
+    Optional<UserEntity> findByPhoneNumber(String phoneNumber);
+    boolean existsByPhoneNumber(String phoneNumber);
 }

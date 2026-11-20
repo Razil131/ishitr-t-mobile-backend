@@ -7,10 +7,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
-import ru.tmobile.backend.dto.AddMemberRequest;
-import ru.tmobile.backend.dto.FamilyGroupCreateRequest;
-import ru.tmobile.backend.dto.LeaveGroupRequest;
-import ru.tmobile.backend.dto.TransferOwnershipRequest;
+import ru.tmobile.backend.dto.familyGroup.AddMemberRequest;
+import ru.tmobile.backend.dto.familyGroup.FamilyGroupCreateRequest;
+import ru.tmobile.backend.dto.familyGroup.LeaveGroupRequest;
+import ru.tmobile.backend.dto.familyGroup.TransferOwnershipRequest;
 import ru.tmobile.backend.entity.FamilyGroupEntity;
 import ru.tmobile.backend.entity.GroupMemberEntity;
 import ru.tmobile.backend.entity.UserEntity;
@@ -78,15 +78,15 @@ public class FamilyGroupController {
     @PostMapping
     public ResponseEntity<FamilyGroupEntity> createGroup(@Valid @RequestBody FamilyGroupCreateRequest request) {
         FamilyGroupEntity group = familyGroupService.createGroup(
-            request.getOwnerId(), 
-            request.getMemberIds()
+            request.ownerId(), 
+            request.memberIds()
         );
         return ResponseEntity.status(HttpStatus.CREATED).body(group);
     }
 
     @PostMapping("/{groupId}/members")
     public ResponseEntity<Void> addMember(@PathVariable Long groupId, @Valid @RequestBody AddMemberRequest request) {
-        familyGroupService.addMember(groupId, request.getUserId());
+        familyGroupService.addMember(groupId, request.userId());
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 
@@ -98,13 +98,13 @@ public class FamilyGroupController {
 
     @PostMapping("/{groupId}/leave")
     public ResponseEntity<Void> leaveGroup(@PathVariable Long groupId, @RequestBody LeaveGroupRequest request) {
-        familyGroupService.leaveGroup(groupId, request.getUserId());
+        familyGroupService.leaveGroup(groupId, request.userId());
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{groupId}/transfer-ownership")
     public ResponseEntity<Void> transferOwnership(@PathVariable Long groupId, @Valid @RequestBody TransferOwnershipRequest request) {
-        familyGroupService.transferOwnership(groupId, request.getNewOwnerId());
+        familyGroupService.transferOwnership(groupId, request.newOwnerId());
         return ResponseEntity.noContent().build();
     }
 

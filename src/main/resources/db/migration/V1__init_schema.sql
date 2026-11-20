@@ -27,7 +27,7 @@ END $$;
 CREATE TABLE IF NOT EXISTS users(
     id BIGSERIAL PRIMARY KEY,
     phone_number VARCHAR(20) NOT NULL UNIQUE,
-    name VARCHAR(255),
+    name VARCHAR(50),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL
 );
 
@@ -35,11 +35,13 @@ CREATE TABLE IF NOT EXISTS users(
 CREATE TABLE IF NOT EXISTS auth_codes(
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL,
+    session_id UUID UNIQUE,
     code VARCHAR(10) NOT NULL,
     expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
     is_used BOOLEAN NOT NULL DEFAULT FALSE,
     attempts_count INT NOT NULL DEFAULT 0,
     blocked_until TIMESTAMP WITH TIME ZONE,
+    requested_at TIMESTAMP WITH TIME ZONE,
     CONSTRAINT fk_auth_codes_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
 );
 
@@ -235,6 +237,7 @@ CREATE TABLE IF NOT EXISTS audit_logs(
 
 -- Домен #1
 CREATE INDEX IF NOT EXISTS idx_auth_codes_user_id ON auth_codes(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_codes_session_id ON auth_codes(session_id);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_auth_codes_active ON auth_codes(user_id, code) WHERE is_used = FALSE;
 CREATE INDEX IF NOT EXISTS idx_user_sessions_active ON user_sessions(user_id, access_token) WHERE revoked_at IS NULL;

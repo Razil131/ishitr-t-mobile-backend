@@ -1,15 +1,11 @@
-package ru.tmobile.backend.dto;
+package ru.tmobile.backend.dto.familyGroup;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import jakarta.validation.constraints.NotNull;
-import lombok.Getter;
-import lombok.Setter;
 
-@Getter
-@Setter
-public class TransferOwnershipRequest {
+public record TransferOwnershipRequest(
     @NotNull(message = "new_owner_id is required")
     @JsonProperty("new_owner_id")
-    private Long newOwnerId;
-}
+    Long newOwnerId
+) {}

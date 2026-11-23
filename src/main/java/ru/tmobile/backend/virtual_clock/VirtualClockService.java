@@ -24,7 +24,7 @@ public class VirtualClockService extends Clock {
 
         if (isPaused){
             this.pauseRealTime = System.currentTimeMillis();
-            this.pauseVirtualTime = getCurrentVirtualTime();
+            this.pauseVirtualTime = newVirtualStart;
         }
     }
 

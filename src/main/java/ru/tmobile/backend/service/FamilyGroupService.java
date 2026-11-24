@@ -19,6 +19,7 @@ import ru.tmobile.backend.entity.FamilyGroupEntity.GroupStatus;
 import ru.tmobile.backend.entity.GroupMemberEntity.MemberRole;
 import ru.tmobile.backend.entity.GroupMemberEntity.MemberStatus;
 import ru.tmobile.backend.exception.BusinessRuleViolationException;
+import ru.tmobile.backend.exception.AuthorizationException;
 import ru.tmobile.backend.repository.AuditLogRepository;
 import ru.tmobile.backend.repository.FamilyGroupRepository;
 import ru.tmobile.backend.repository.GroupMemberRepository;
@@ -137,10 +138,11 @@ public class FamilyGroupService {
         return auditLogEntity;
     }
 
-    @Transactional 
-    public void addMember(Long groupId, Long userId){
+    @Transactional
+    public void addMember(Long groupId, Long userId, Long callerId){
         FamilyGroupEntity group = familyGroupRepository.findByIdAndStatus(groupId, GroupStatus.ACTIVE)
             .orElseThrow(() -> new BusinessRuleViolationException("GROUP_NOT_FOUND", "Group not found: " + groupId, HttpStatus.NOT_FOUND));
+        validateOwnerAccess(group, callerId);
         validateAddMemberRequest(group,userId);
         OffsetDateTime now = virtualClock.instant().atZone(ZoneId.systemDefault()).toOffsetDateTime();
         Long ownerId = group.getOwnerId();
@@ -150,9 +152,20 @@ public class FamilyGroupService {
         auditLogRepository.save(auditLogEntity);
     }
 
+    private void validateOwnerAccess(FamilyGroupEntity group, Long callerId) {
+        if (!group.getOwnerId().equals(callerId)) {
+            throw new AuthorizationException("FORBIDDEN", "Only group owner can perform this action");
+        }
+    }
+
+    private void validateCallerIdentity(Long userId, Long callerId) {
+        if (callerId == null || !userId.equals(callerId)) {
+            throw new AuthorizationException("FORBIDDEN", "Cannot perform action on behalf of another user");
+        }
+    }
+
     private void validateAddMemberRequest(FamilyGroupEntity group, Long userId){
         Long groupId = group.getId();
-        // TODO добавить проверку того что вызывающий владелец группы
 
         if (userRepository.findById(userId).isEmpty()){
             throw new BusinessRuleViolationException(
@@ -179,10 +192,11 @@ public class FamilyGroupService {
         }
     }
     
-    @Transactional 
-    public void removeMember(Long groupId, Long targetUserId){
+    @Transactional
+    public void removeMember(Long groupId, Long targetUserId, Long callerId){
         FamilyGroupEntity group = familyGroupRepository.findByIdAndStatus(groupId, GroupStatus.ACTIVE)
             .orElseThrow(() -> new BusinessRuleViolationException("GROUP_NOT_FOUND", "Group not found: " + groupId, HttpStatus.NOT_FOUND));
+        validateOwnerAccess(group, callerId);
         Long ownerId = group.getOwnerId();
         if (targetUserId.equals(ownerId)){
             throw new BusinessRuleViolationException(
@@ -191,8 +205,6 @@ public class FamilyGroupService {
                 HttpStatus.BAD_REQUEST
             );
         }
-
-        // TODO добавить проверку того что вызывающий владелец группы
 
         GroupMemberEntity targetUser = groupMemberRepository.findByGroupIdAndUserIdAndStatus(groupId,targetUserId,MemberStatus.ACTIVE)
             .orElseThrow(() -> new BusinessRuleViolationException("USER_NOT_IN_TARGET_GROUP","user is not in the target group: " + groupId,HttpStatus.NOT_FOUND));
@@ -206,10 +218,11 @@ public class FamilyGroupService {
         
     }
 
-    @Transactional 
-    public void leaveGroup(Long groupId, Long userId){
+    @Transactional
+    public void leaveGroup(Long groupId, Long userId, Long callerId){
         FamilyGroupEntity group = familyGroupRepository.findByIdAndStatus(groupId, GroupStatus.ACTIVE)
             .orElseThrow(() -> new BusinessRuleViolationException("GROUP_NOT_FOUND", "Group not found: " + groupId, HttpStatus.NOT_FOUND));
+        validateCallerIdentity(userId, callerId);
         Long ownerId = group.getOwnerId();
         if (userId.equals(ownerId)){
             throw new BusinessRuleViolationException(
@@ -218,8 +231,6 @@ public class FamilyGroupService {
                 HttpStatus.BAD_REQUEST
             );
         }
-
-        // TODO добавить проверку того что вызывающий пользователь с userId
 
         GroupMemberEntity user = groupMemberRepository.findByGroupIdAndUserIdAndStatus(groupId,userId,MemberStatus.ACTIVE)
             .orElseThrow(() -> new BusinessRuleViolationException("USER_NOT_IN_TARGET_GROUP","user is not in the target group: " + groupId,HttpStatus.NOT_FOUND));
@@ -233,10 +244,11 @@ public class FamilyGroupService {
 
     }
 
-    @Transactional 
-    public void transferOwnership(Long groupId, Long newOwnerId){
+    @Transactional
+    public void transferOwnership(Long groupId, Long newOwnerId, Long callerId){
         FamilyGroupEntity group = familyGroupRepository.findByIdAndStatus(groupId, GroupStatus.ACTIVE)
             .orElseThrow(() -> new BusinessRuleViolationException("GROUP_NOT_FOUND", "Group not found: " + groupId, HttpStatus.NOT_FOUND));
+        validateOwnerAccess(group, callerId);
         Long oldOwnerId = group.getOwnerId();
 
         if (newOwnerId.equals(oldOwnerId)){
@@ -252,8 +264,6 @@ public class FamilyGroupService {
         GroupMemberEntity newOwner = groupMemberRepository.findByGroupIdAndUserIdAndStatus(groupId,newOwnerId,MemberStatus.ACTIVE)
             .orElseThrow(() -> new BusinessRuleViolationException("BR_24_NEW_OWNER_NOT_MEMBER","user is not in the target group: " + groupId,HttpStatus.BAD_REQUEST));
 
-        // TODO добавить проверку того что вызывающий владелец группы
-
         OffsetDateTime now = virtualClock.instant().atZone(ZoneId.systemDefault()).toOffsetDateTime();
         oldOwner.setRole(MemberRole.MEMBER);
         newOwner.setRole(MemberRole.OWNER);
@@ -266,11 +276,11 @@ public class FamilyGroupService {
         
     }
 
-    @Transactional 
-    public void disbandGroup(Long groupId){
+    @Transactional
+    public void disbandGroup(Long groupId, Long callerId){
         FamilyGroupEntity group = familyGroupRepository.findByIdAndStatus(groupId, GroupStatus.ACTIVE)
             .orElseThrow(() -> new BusinessRuleViolationException("GROUP_NOT_FOUND", "Group not found: " + groupId, HttpStatus.NOT_FOUND));
-        // TODO добавить проверку того что вызывающий владелец группы
+        validateOwnerAccess(group, callerId);
         OffsetDateTime now = virtualClock.instant().atZone(ZoneId.systemDefault()).toOffsetDateTime();
         Long ownerId = group.getOwnerId();
 

@@ -21,6 +21,7 @@ import ru.tmobile.backend.repository.FamilyGroupRepository;
 import ru.tmobile.backend.repository.GroupMemberRepository;
 import ru.tmobile.backend.repository.UserRepository;
 import ru.tmobile.backend.service.FamilyGroupService;
+import ru.tmobile.backend.security.AuthContext;
 
 import java.util.List;
 import java.util.Map;
@@ -86,31 +87,36 @@ public class FamilyGroupController {
 
     @PostMapping("/{groupId}/members")
     public ResponseEntity<Void> addMember(@PathVariable Long groupId, @Valid @RequestBody AddMemberRequest request) {
-        familyGroupService.addMember(groupId, request.userId());
+        Long callerId = AuthContext.getUserId();
+        familyGroupService.addMember(groupId, request.userId(), callerId);
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 
     @DeleteMapping("/{groupId}/members/{userId}")
     public ResponseEntity<Void> removeMember(@PathVariable Long groupId, @PathVariable Long userId) {
-        familyGroupService.removeMember(groupId, userId);
+        Long callerId = AuthContext.getUserId();
+        familyGroupService.removeMember(groupId, userId, callerId);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{groupId}/leave")
     public ResponseEntity<Void> leaveGroup(@PathVariable Long groupId, @RequestBody LeaveGroupRequest request) {
-        familyGroupService.leaveGroup(groupId, request.userId());
+        Long callerId = AuthContext.getUserId();
+        familyGroupService.leaveGroup(groupId, request.userId(), callerId);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{groupId}/transfer-ownership")
     public ResponseEntity<Void> transferOwnership(@PathVariable Long groupId, @Valid @RequestBody TransferOwnershipRequest request) {
-        familyGroupService.transferOwnership(groupId, request.newOwnerId());
+        Long callerId = AuthContext.getUserId();
+        familyGroupService.transferOwnership(groupId, request.newOwnerId(), callerId);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{groupId}/disband")
     public ResponseEntity<Void> disbandGroup(@PathVariable Long groupId) {
-        familyGroupService.disbandGroup(groupId);
+        Long callerId = AuthContext.getUserId();
+        familyGroupService.disbandGroup(groupId, callerId);
         return ResponseEntity.noContent().build();
     }
 

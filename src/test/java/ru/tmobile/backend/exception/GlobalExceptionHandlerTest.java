@@ -36,6 +36,30 @@ class GlobalExceptionHandlerTest {
         assertEquals(HttpStatus.CONFLICT, r.getStatusCode());
     }
 
+    @Test void handleAuthenticationReturns401() {
+        AuthenticationException ex = new AuthenticationException(
+            "UNAUTHORIZED", "Invalid or missing JWT token");
+
+        ResponseEntity<ErrorResponse> response = handler.handleAuthentication(ex);
+
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals("UNAUTHORIZED", response.getBody().error().code());
+        assertEquals("Invalid or missing JWT token", response.getBody().error().message());
+    }
+
+    @Test void handleAuthorizationReturns403() {
+        AuthorizationException ex = new AuthorizationException(
+            "FORBIDDEN", "Only group owner can perform this action");
+
+        ResponseEntity<ErrorResponse> response = handler.handleAuthorization(ex);
+
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals("FORBIDDEN", response.getBody().error().code());
+        assertEquals("Only group owner can perform this action", response.getBody().error().message());
+    }
+
     @Test void handlesValidationErrorsAggregatingFieldMessages() {
         RequestCodeRequest target = new RequestCodeRequest("");
         BeanPropertyBindingResult br = new BeanPropertyBindingResult(target, "request");

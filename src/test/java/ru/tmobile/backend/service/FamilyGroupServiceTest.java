@@ -164,7 +164,7 @@ class FamilyGroupServiceTest {
         when(memberRepo.findByUserIdAndStatus(5L, MemberStatus.ACTIVE)).thenReturn(Optional.empty());
         when(memberRepo.countByGroupIdAndStatus(10L, MemberStatus.ACTIVE)).thenReturn(2L);
 
-        svc.addMember(10L, 5L);
+        svc.addMember(10L, 5L, 1L);
 
         ArgumentCaptor<GroupMemberEntity> cap = ArgumentCaptor.forClass(GroupMemberEntity.class);
         verify(memberRepo).save(cap.capture());
@@ -176,7 +176,7 @@ class FamilyGroupServiceTest {
     @Test void addMemberRejectsWhenGroupNotFound() {
         when(groupRepo.findByIdAndStatus(99L, GroupStatus.ACTIVE)).thenReturn(Optional.empty());
         BusinessRuleViolationException ex = assertThrows(BusinessRuleViolationException.class,
-            () -> svc.addMember(99L, 5L));
+            () -> svc.addMember(99L, 5L, 1L));
         assertEquals("GROUP_NOT_FOUND", ex.getErrorCode());
     }
 
@@ -185,7 +185,7 @@ class FamilyGroupServiceTest {
         when(groupRepo.findByIdAndStatus(10L, GroupStatus.ACTIVE)).thenReturn(Optional.of(g));
         when(userRepo.findById(5L)).thenReturn(Optional.empty());
         BusinessRuleViolationException ex = assertThrows(BusinessRuleViolationException.class,
-            () -> svc.addMember(10L, 5L));
+            () -> svc.addMember(10L, 5L, 1L));
         assertEquals("USER_NOT_FOUND", ex.getErrorCode());
     }
 
@@ -195,7 +195,7 @@ class FamilyGroupServiceTest {
         when(userRepo.findById(5L)).thenReturn(Optional.of(user(5L)));
         when(memberRepo.findByUserIdAndStatus(5L, MemberStatus.ACTIVE)).thenReturn(Optional.of(member(50L, 5L, MemberRole.MEMBER, MemberStatus.ACTIVE)));
         BusinessRuleViolationException ex = assertThrows(BusinessRuleViolationException.class,
-            () -> svc.addMember(10L, 5L));
+            () -> svc.addMember(10L, 5L, 1L));
         assertEquals("BR_01_USER_ALREADY_IN_GROUP", ex.getErrorCode());
         assertEquals(HttpStatus.CONFLICT, ex.getHttpStatus());
     }
@@ -207,7 +207,7 @@ class FamilyGroupServiceTest {
         when(memberRepo.findByUserIdAndStatus(5L, MemberStatus.ACTIVE)).thenReturn(Optional.empty());
         when(memberRepo.countByGroupIdAndStatus(10L, MemberStatus.ACTIVE)).thenReturn(4L);
         BusinessRuleViolationException ex = assertThrows(BusinessRuleViolationException.class,
-            () -> svc.addMember(10L, 5L));
+            () -> svc.addMember(10L, 5L, 1L));
         assertEquals("BR_11_GROUP_IS_FULL", ex.getErrorCode());
     }
 
@@ -217,7 +217,7 @@ class FamilyGroupServiceTest {
         GroupMemberEntity target = member(10L, 5L, MemberRole.MEMBER, MemberStatus.ACTIVE);
         when(groupRepo.findByIdAndStatus(10L, GroupStatus.ACTIVE)).thenReturn(Optional.of(g));
         when(memberRepo.findByGroupIdAndUserIdAndStatus(10L, 5L, MemberStatus.ACTIVE)).thenReturn(Optional.of(target));
-        svc.removeMember(10L, 5L);
+        svc.removeMember(10L, 5L, 1L);
         assertEquals(MemberStatus.EXCLUDED, target.getStatus());
         verify(memberRepo).save(target);
         ArgumentCaptor<AuditLogEntity> cap = ArgumentCaptor.forClass(AuditLogEntity.class);
@@ -229,7 +229,7 @@ class FamilyGroupServiceTest {
         FamilyGroupEntity g = group(10L, 1L, GroupStatus.ACTIVE);
         when(groupRepo.findByIdAndStatus(10L, GroupStatus.ACTIVE)).thenReturn(Optional.of(g));
         BusinessRuleViolationException ex = assertThrows(BusinessRuleViolationException.class,
-            () -> svc.removeMember(10L, 1L));
+            () -> svc.removeMember(10L, 1L, 1L));
         assertEquals("BR_22_REMOVE_OWNER", ex.getErrorCode());
     }
 
@@ -238,7 +238,7 @@ class FamilyGroupServiceTest {
         when(groupRepo.findByIdAndStatus(10L, GroupStatus.ACTIVE)).thenReturn(Optional.of(g));
         when(memberRepo.findByGroupIdAndUserIdAndStatus(10L, 5L, MemberStatus.ACTIVE)).thenReturn(Optional.empty());
         BusinessRuleViolationException ex = assertThrows(BusinessRuleViolationException.class,
-            () -> svc.removeMember(10L, 5L));
+            () -> svc.removeMember(10L, 5L, 1L));
         assertEquals("USER_NOT_IN_TARGET_GROUP", ex.getErrorCode());
     }
 
@@ -248,7 +248,7 @@ class FamilyGroupServiceTest {
         GroupMemberEntity me = member(10L, 5L, MemberRole.MEMBER, MemberStatus.ACTIVE);
         when(groupRepo.findByIdAndStatus(10L, GroupStatus.ACTIVE)).thenReturn(Optional.of(g));
         when(memberRepo.findByGroupIdAndUserIdAndStatus(10L, 5L, MemberStatus.ACTIVE)).thenReturn(Optional.of(me));
-        svc.leaveGroup(10L, 5L);
+        svc.leaveGroup(10L, 5L, 5L);
         assertEquals(MemberStatus.LEAVE, me.getStatus());
         verify(memberRepo).save(me);
         ArgumentCaptor<AuditLogEntity> cap = ArgumentCaptor.forClass(AuditLogEntity.class);
@@ -260,7 +260,7 @@ class FamilyGroupServiceTest {
         FamilyGroupEntity g = group(10L, 1L, GroupStatus.ACTIVE);
         when(groupRepo.findByIdAndStatus(10L, GroupStatus.ACTIVE)).thenReturn(Optional.of(g));
         BusinessRuleViolationException ex = assertThrows(BusinessRuleViolationException.class,
-            () -> svc.leaveGroup(10L, 1L));
+            () -> svc.leaveGroup(10L, 1L, 1L));
         assertEquals("BR_23_OWNER_LEAVE", ex.getErrorCode());
     }
 
@@ -269,7 +269,7 @@ class FamilyGroupServiceTest {
         when(groupRepo.findByIdAndStatus(10L, GroupStatus.ACTIVE)).thenReturn(Optional.of(g));
         when(memberRepo.findByGroupIdAndUserIdAndStatus(10L, 5L, MemberStatus.ACTIVE)).thenReturn(Optional.empty());
         BusinessRuleViolationException ex = assertThrows(BusinessRuleViolationException.class,
-            () -> svc.leaveGroup(10L, 5L));
+            () -> svc.leaveGroup(10L, 5L, 5L));
         assertEquals("USER_NOT_IN_TARGET_GROUP", ex.getErrorCode());
     }
 
@@ -281,7 +281,7 @@ class FamilyGroupServiceTest {
         when(groupRepo.findByIdAndStatus(10L, GroupStatus.ACTIVE)).thenReturn(Optional.of(g));
         when(memberRepo.findByGroupIdAndUserIdAndStatus(10L, 1L, MemberStatus.ACTIVE)).thenReturn(Optional.of(oldOwner));
         when(memberRepo.findByGroupIdAndUserIdAndStatus(10L, 2L, MemberStatus.ACTIVE)).thenReturn(Optional.of(newOwner));
-        svc.transferOwnership(10L, 2L);
+        svc.transferOwnership(10L, 2L, 1L);
         assertEquals(MemberRole.MEMBER, oldOwner.getRole());
         assertEquals(MemberRole.OWNER, newOwner.getRole());
         assertEquals(2L, g.getOwnerId());
@@ -295,7 +295,7 @@ class FamilyGroupServiceTest {
         FamilyGroupEntity g = group(10L, 1L, GroupStatus.ACTIVE);
         when(groupRepo.findByIdAndStatus(10L, GroupStatus.ACTIVE)).thenReturn(Optional.of(g));
         BusinessRuleViolationException ex = assertThrows(BusinessRuleViolationException.class,
-            () -> svc.transferOwnership(10L, 1L));
+            () -> svc.transferOwnership(10L, 1L, 1L));
         assertEquals("BR_25_SAME_OWNER", ex.getErrorCode());
     }
 
@@ -306,7 +306,7 @@ class FamilyGroupServiceTest {
         when(memberRepo.findByGroupIdAndUserIdAndStatus(10L, 1L, MemberStatus.ACTIVE)).thenReturn(Optional.of(oldOwner));
         when(memberRepo.findByGroupIdAndUserIdAndStatus(10L, 2L, MemberStatus.ACTIVE)).thenReturn(Optional.empty());
         BusinessRuleViolationException ex = assertThrows(BusinessRuleViolationException.class,
-            () -> svc.transferOwnership(10L, 2L));
+            () -> svc.transferOwnership(10L, 2L, 1L));
         assertEquals("BR_24_NEW_OWNER_NOT_MEMBER", ex.getErrorCode());
     }
 
@@ -317,7 +317,7 @@ class FamilyGroupServiceTest {
         GroupMemberEntity m2 = member(10L, 2L, MemberRole.MEMBER, MemberStatus.ACTIVE);
         when(groupRepo.findByIdAndStatus(10L, GroupStatus.ACTIVE)).thenReturn(Optional.of(g));
         when(memberRepo.findByGroupIdAndStatus(10L, MemberStatus.ACTIVE)).thenReturn(List.of(m1, m2));
-        svc.disbandGroup(10L);
+        svc.disbandGroup(10L, 1L);
         assertEquals(GroupStatus.DISBANDED, g.getStatus());
         assertEquals(MemberStatus.EXCLUDED, m1.getStatus());
         assertEquals(MemberStatus.EXCLUDED, m2.getStatus());
@@ -331,7 +331,7 @@ class FamilyGroupServiceTest {
     @Test void disbandGroupRejectsWhenGroupNotFound() {
         when(groupRepo.findByIdAndStatus(99L, GroupStatus.ACTIVE)).thenReturn(Optional.empty());
         BusinessRuleViolationException ex = assertThrows(BusinessRuleViolationException.class,
-            () -> svc.disbandGroup(99L));
+            () -> svc.disbandGroup(99L, 1L));
         assertEquals("GROUP_NOT_FOUND", ex.getErrorCode());
     }
 
@@ -342,7 +342,7 @@ class FamilyGroupServiceTest {
         GroupMemberEntity alreadyExcluded = member(10L, 2L, MemberRole.MEMBER, MemberStatus.EXCLUDED);
         when(groupRepo.findByIdAndStatus(10L, GroupStatus.ACTIVE)).thenReturn(Optional.of(g));
         when(memberRepo.findByGroupIdAndStatus(10L, MemberStatus.ACTIVE)).thenReturn(List.of(active));
-        svc.disbandGroup(10L);
+        svc.disbandGroup(10L, 1L);
         verify(memberRepo).saveAll(List.of(active));
         assertEquals(MemberStatus.EXCLUDED, alreadyExcluded.getStatus());
     }

@@ -76,6 +76,11 @@ public class JwtTokenProvider {
         return claims.get("user_id", Long.class);
     }
 
+    public String extractRole(String token) {
+        Claims claims = parseClaims(token);
+        return claims.get("role", String.class);
+    }
+
     public OffsetDateTime extractExpiration(String token) {
         Claims claims = parseClaims(token);
         return OffsetDateTime.ofInstant(claims.getExpiration().toInstant(), ZoneOffset.UTC);

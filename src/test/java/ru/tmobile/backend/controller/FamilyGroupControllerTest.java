@@ -17,6 +17,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -40,6 +41,7 @@ import ru.tmobile.backend.exception.GlobalExceptionHandler;
 import ru.tmobile.backend.repository.FamilyGroupRepository;
 import ru.tmobile.backend.repository.GroupMemberRepository;
 import ru.tmobile.backend.repository.UserRepository;
+import ru.tmobile.backend.security.AuthContext;
 import ru.tmobile.backend.service.FamilyGroupService;
 
 class FamilyGroupControllerTest {
@@ -60,6 +62,10 @@ class FamilyGroupControllerTest {
             .setControllerAdvice(new GlobalExceptionHandler())
             .build();
         json = new ObjectMapper();
+    }
+
+    @AfterEach void cleanAuthContext() {
+        AuthContext.clear();
     }
 
     private FamilyGroupEntity grp(long id, long ownerId) {
@@ -127,12 +133,23 @@ class FamilyGroupControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsString(new AddMemberRequest(7L))))
             .andExpect(status().isCreated());
-        verify(familyGroupService).addMember(5L, 7L);
+        verify(familyGroupService).addMember(5L, 7L, null);
+    }
+
+    @Test void addMemberUsesCallerIdFromAuthContext() throws Exception {
+        AuthContext.set(new AuthContext.UserContext(3L, "OWNER"));
+
+        mockMvc.perform(post("/api/v1/groups/5/members")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(new AddMemberRequest(7L))))
+            .andExpect(status().isCreated());
+
+        verify(familyGroupService).addMember(5L, 7L, 3L);
     }
 
     @Test void addMemberReturns409WhenServiceThrowsConflict() throws Exception {
         doThrow(new BusinessRuleViolationException("BR_01_USER_ALREADY_IN_GROUP", "dup", HttpStatus.CONFLICT))
-            .when(familyGroupService).addMember(eq(5L), eq(7L));
+            .when(familyGroupService).addMember(eq(5L), eq(7L), any());
 
         mockMvc.perform(post("/api/v1/groups/5/members")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -144,7 +161,7 @@ class FamilyGroupControllerTest {
     @Test void removeMemberReturns204() throws Exception {
         mockMvc.perform(delete("/api/v1/groups/5/members/7"))
             .andExpect(status().isNoContent());
-        verify(familyGroupService).removeMember(5L, 7L);
+        verify(familyGroupService).removeMember(5L, 7L, null);
     }
 
     @Test void leaveGroupReturns204() throws Exception {
@@ -152,7 +169,7 @@ class FamilyGroupControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsString(new LeaveGroupRequest(7L))))
             .andExpect(status().isNoContent());
-        verify(familyGroupService).leaveGroup(5L, 7L);
+        verify(familyGroupService).leaveGroup(5L, 7L, null);
     }
 
     @Test void transferOwnershipReturns204() throws Exception {
@@ -160,12 +177,12 @@ class FamilyGroupControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsString(new TransferOwnershipRequest(2L))))
             .andExpect(status().isNoContent());
-        verify(familyGroupService).transferOwnership(5L, 2L);
+        verify(familyGroupService).transferOwnership(5L, 2L, null);
     }
 
     @Test void disbandGroupReturns204() throws Exception {
         mockMvc.perform(post("/api/v1/groups/5/disband"))
             .andExpect(status().isNoContent());
-        verify(familyGroupService).disbandGroup(5L);
+        verify(familyGroupService).disbandGroup(5L, null);
     }
 }

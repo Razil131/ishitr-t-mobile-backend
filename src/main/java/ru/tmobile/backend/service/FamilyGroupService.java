@@ -14,6 +14,8 @@ import ru.tmobile.backend.entity.AuditLogEntity;
 import ru.tmobile.backend.entity.FamilyGroupEntity;
 import ru.tmobile.backend.entity.GroupMemberEntity;
 import ru.tmobile.backend.entity.UserEntity;
+import ru.tmobile.backend.entity.UserLimitEntity;
+import ru.tmobile.backend.entity.enums.ResourceType;
 import ru.tmobile.backend.entity.AuditLogEntity.ActionType;
 import ru.tmobile.backend.entity.FamilyGroupEntity.GroupStatus;
 import ru.tmobile.backend.entity.GroupMemberEntity.MemberRole;
@@ -23,17 +25,23 @@ import ru.tmobile.backend.exception.AuthorizationException;
 import ru.tmobile.backend.repository.AuditLogRepository;
 import ru.tmobile.backend.repository.FamilyGroupRepository;
 import ru.tmobile.backend.repository.GroupMemberRepository;
+import ru.tmobile.backend.repository.GroupPackageBalanceRepository;
+import ru.tmobile.backend.repository.UserLimitRepository;
 import ru.tmobile.backend.repository.UserRepository;
 import ru.tmobile.backend.virtual_clock.VirtualClockService;
 
 @Service
 @RequiredArgsConstructor
 public class FamilyGroupService {
+    private final GroupPackageBalanceRepository groupPackageBalanceRepository;
+    private final UserLimitRepository userLimitRepository;
     private final AuditLogRepository auditLogRepository;
     private final VirtualClockService virtualClock;
     private final UserRepository userRepository;
     private final FamilyGroupRepository familyGroupRepository;
     private final GroupMemberRepository groupMemberRepository;
+
+    private static final java.time.YearMonth BASE_PERIOD = java.time.YearMonth.of(2026,1);
 
     @Transactional 
     public FamilyGroupEntity createGroup(Long ownerId, List<Long> memberIds){
@@ -69,9 +77,6 @@ public class FamilyGroupService {
     }
 
     private void validateCreateGroupRequest(Long ownerId, List<Long> memberIds){
-        List<Long> allUserIds = new ArrayList<>(memberIds);
-        allUserIds.add(ownerId);
-
         if (memberIds.size() < 1 || memberIds.size() > 3){
             throw new BusinessRuleViolationException(
                 "INVALID_MEMBER_COUNT",
@@ -79,6 +84,18 @@ public class FamilyGroupService {
                 HttpStatus.BAD_REQUEST
             );
         }
+
+        if (memberIds.stream().distinct().count() != memberIds.size()) {
+            throw new BusinessRuleViolationException(
+                "DUPLICATE_MEMBERS_IDS",
+                "Duplicate member ids: " + memberIds,
+                HttpStatus.BAD_REQUEST
+            );
+        }
+
+        List<Long> allUserIds = new ArrayList<>(memberIds);
+        allUserIds.add(ownerId);
+
         if (memberIds.contains(ownerId)){
             throw new BusinessRuleViolationException(
                 "INVALID_REQUEST_OWNER_IN_MEMBERS",
@@ -86,6 +103,7 @@ public class FamilyGroupService {
                 HttpStatus.BAD_REQUEST
             );
         }
+
         List<GroupMemberEntity> existingMemberships = groupMemberRepository.findByUserIdInAndStatus(allUserIds, MemberStatus.ACTIVE);
         if (!existingMemberships.isEmpty()) {
             List<Long> blockedUserIds = existingMemberships.stream()
@@ -211,6 +229,7 @@ public class FamilyGroupService {
         
         targetUser.setStatus(MemberStatus.EXCLUDED);
         groupMemberRepository.save(targetUser);
+        invalidateMemberLimits(groupId, targetUserId);
 
         OffsetDateTime now = virtualClock.instant().atZone(ZoneId.systemDefault()).toOffsetDateTime();
         AuditLogEntity auditLog = createAuditLog(groupId, ownerId, targetUserId, ActionType.REMOVE_MEMBER, now, "{\"previous_role\":\"MEMBER\"}");
@@ -237,6 +256,7 @@ public class FamilyGroupService {
         
         user.setStatus(MemberStatus.LEAVE);
         groupMemberRepository.save(user);
+        invalidateMemberLimits(groupId, userId);
 
         OffsetDateTime now = virtualClock.instant().atZone(ZoneId.systemDefault()).toOffsetDateTime();
         AuditLogEntity auditLog = createAuditLog(groupId, userId, userId, ActionType.MEMBER_LEFT, now, "{\"reason\":\"voluntary\"}");
@@ -262,7 +282,7 @@ public class FamilyGroupService {
             .orElseThrow(() -> new BusinessRuleViolationException("USER_NOT_FOUND", "Old owner not found: " + oldOwnerId, HttpStatus.NOT_FOUND));
 
         GroupMemberEntity newOwner = groupMemberRepository.findByGroupIdAndUserIdAndStatus(groupId,newOwnerId,MemberStatus.ACTIVE)
-            .orElseThrow(() -> new BusinessRuleViolationException("BR_24_NEW_OWNER_NOT_MEMBER","user is not in the target group: " + groupId,HttpStatus.BAD_REQUEST));
+            .orElseThrow(() -> new BusinessRuleViolationException("BR_24_NEW_OWNER_NOT_MEMBER","user is not in the target group: " + groupId,HttpStatus.NOT_FOUND));
 
         OffsetDateTime now = virtualClock.instant().atZone(ZoneId.systemDefault()).toOffsetDateTime();
         oldOwner.setRole(MemberRole.MEMBER);
@@ -287,13 +307,35 @@ public class FamilyGroupService {
         List<GroupMemberEntity> members = groupMemberRepository.findByGroupIdAndStatus(groupId, MemberStatus.ACTIVE);
         for (GroupMemberEntity member : members){
             member.setStatus(MemberStatus.EXCLUDED);
+            invalidateMemberLimits(groupId, member.getUserId());
         }
         groupMemberRepository.saveAll(members);
+
+        Long periodNumber = java.time.temporal.ChronoUnit.MONTHS.between(BASE_PERIOD, java.time.YearMonth.from(now)) +1;
+
+        groupPackageBalanceRepository.findByGroupIdAndPeriodIdForUpdate(groupId, periodNumber)
+            .ifPresent(balance->{balance.setRemainingMinutes(0L);
+                                    balance.setRemainingTraffic(0.0);
+                                    groupPackageBalanceRepository.save(balance);
+                                });
 
         group.setStatus(GroupStatus.DISBANDED);
         familyGroupRepository.save(group);
 
         AuditLogEntity auditLog = createAuditLog(groupId, ownerId, ownerId, ActionType.DISBAND_GROUP, now, String.format("{\"members_count_at_disband\":%d}", members.size()));
         auditLogRepository.save(auditLog);
+    }
+
+    private void invalidateMemberLimits(Long groupId, Long userId) {
+        List<UserLimitEntity> limits = new ArrayList<>();
+        for (ResourceType type : ResourceType.values()) {
+            userLimitRepository.findByUserIdAndGroupIdAndResourceType(userId, groupId, type)
+                .ifPresent(limits::add);
+        }
+        for (UserLimitEntity limit : limits){
+            limit.setLimitValue(0.0);
+            limit.setIsBlocked(true);
+        }
+        userLimitRepository.saveAll(limits);
     }
 }

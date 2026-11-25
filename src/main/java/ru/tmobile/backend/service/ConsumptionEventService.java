@@ -66,7 +66,7 @@ public class ConsumptionEventService {
 
         Long periodNumber = java.time.temporal.ChronoUnit.MONTHS.between(
             BASE_PERIOD,
-            java.time.YearMonth.from(eventTimestamp)
+            java.time.YearMonth.from(now)
         ) + 1;
 
         ResourceType limitResType = ResourceType.valueOf(resourceType);

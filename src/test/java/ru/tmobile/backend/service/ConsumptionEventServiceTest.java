@@ -233,21 +233,56 @@ class ConsumptionEventServiceTest {
         assertEquals(500.0, bal.getRemainingTraffic());
     }
 
-    @Test void calculatesPeriodNumberFromBaseMonth() {
+    @Test void calculatesPeriodNumberFromCurrentVirtualTime() {
         setupCommonStubs();
         OffsetDateTime event = OffsetDateTime.of(2026, 3, 15, 12, 0, 0, 0, ZoneOffset.UTC);
         UserLimitEntity ul = limit(1L, 5L, ResourceType.TRAFFIC, 100.0, false);
-        GroupPackageBalanceEntity bal = balance(5L, 3L, 500.0, 1000L);
+        GroupPackageBalanceEntity bal = balance(5L, 1L, 500.0, 1000L);
         when(limitRepo.findByUserIdAndGroupIdAndResourceType(1L, 5L, ResourceType.TRAFFIC)).thenReturn(Optional.of(ul));
         when(subscriptionRepo.findActiveByGroupId(eq(5L), any())).thenReturn(Optional.of(sub(5L)));
-        when(balanceRepo.findByGroupIdAndPeriodIdForUpdate(5L, 3L)).thenReturn(Optional.of(bal));
-        when(usageRepo.findByUserIdAndGroupIdAndPeriodIdAndResourceType(1L, 5L, 3L, ResourceType.TRAFFIC))
+        when(balanceRepo.findByGroupIdAndPeriodIdForUpdate(5L, 1L)).thenReturn(Optional.of(bal));
+        when(usageRepo.findByUserIdAndGroupIdAndPeriodIdAndResourceType(1L, 5L, 1L, ResourceType.TRAFFIC))
             .thenReturn(Optional.empty());
 
         svc.saveConsumptionEvent("e", 1L, "TRAFFIC", 10.0, event, 5L);
 
         ArgumentCaptor<UserUsageEntity> uc = ArgumentCaptor.forClass(UserUsageEntity.class);
         verify(usageRepo).save(uc.capture());
-        assertEquals(3L, uc.getValue().getPeriodId());
+        assertEquals(1L, uc.getValue().getPeriodId());
+
+        ArgumentCaptor<ConsumptionEventEntity> ec = ArgumentCaptor.forClass(ConsumptionEventEntity.class);
+        verify(eventRepo).save(ec.capture());
+        assertEquals(event, ec.getValue().getEventTimestamp());
+        assertEquals(now.toInstant(), ec.getValue().getProcessedAt().toInstant());
+    }
+    
+    @Test void retroactiveEventDeductsInCurrentPeriodAndBlocksWhenLimitExceeded() {
+        setupCommonStubs();
+        OffsetDateTime april = OffsetDateTime.of(2026, 4, 10, 12, 0, 0, 0, ZoneOffset.UTC);
+        OffsetDateTime marchEvent = OffsetDateTime.of(2026, 3, 20, 15, 0, 0, 0, ZoneOffset.UTC);
+        when(clock.instant()).thenReturn(april.toInstant());
+
+        UserLimitEntity ul = limit(1L, 5L, ResourceType.TRAFFIC, 100.0, false);
+        GroupPackageBalanceEntity bal = balance(5L, 4L, 500.0, 1000L);
+        UserUsageEntity usage = new UserUsageEntity();
+        usage.setUserId(1L); usage.setGroupId(5L); usage.setResourceType(ResourceType.TRAFFIC);
+        usage.setUsedValue(90.0); usage.setPeriodId(4L);
+
+        when(limitRepo.findByUserIdAndGroupIdAndResourceType(1L, 5L, ResourceType.TRAFFIC)).thenReturn(Optional.of(ul));
+        when(subscriptionRepo.findActiveByGroupId(eq(5L), any())).thenReturn(Optional.of(sub(5L)));
+        when(balanceRepo.findByGroupIdAndPeriodIdForUpdate(5L, 4L)).thenReturn(Optional.of(bal));
+        when(usageRepo.findByUserIdAndGroupIdAndPeriodIdAndResourceType(1L, 5L, 4L, ResourceType.TRAFFIC))
+            .thenReturn(Optional.of(usage));
+
+        svc.saveConsumptionEvent("late-event", 1L, "TRAFFIC", 50.0, marchEvent, 5L);
+
+        assertEquals(100.0, usage.getUsedValue());
+        assertEquals(490.0, bal.getRemainingTraffic());
+        assertTrue(ul.getIsBlocked());
+
+        ArgumentCaptor<ConsumptionEventEntity> ec = ArgumentCaptor.forClass(ConsumptionEventEntity.class);
+        verify(eventRepo).save(ec.capture());
+        assertEquals(marchEvent, ec.getValue().getEventTimestamp());
+        assertEquals(april.toInstant(), ec.getValue().getProcessedAt().toInstant());
     }
 }

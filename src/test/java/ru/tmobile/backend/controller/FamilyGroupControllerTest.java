@@ -29,32 +29,41 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import ru.tmobile.backend.dto.familyGroup.AddMemberRequest;
 import ru.tmobile.backend.dto.familyGroup.FamilyGroupCreateRequest;
+import ru.tmobile.backend.dto.familyGroup.GroupDetailResponse;
 import ru.tmobile.backend.dto.familyGroup.LeaveGroupRequest;
 import ru.tmobile.backend.dto.familyGroup.TransferOwnershipRequest;
 import ru.tmobile.backend.entity.FamilyGroupEntity;
 import ru.tmobile.backend.entity.FamilyGroupEntity.GroupStatus;
 import ru.tmobile.backend.entity.GroupMemberEntity;
 import ru.tmobile.backend.entity.GroupMemberEntity.MemberStatus;
+import ru.tmobile.backend.entity.UserEntity;
 import ru.tmobile.backend.exception.BusinessRuleViolationException;
 import ru.tmobile.backend.exception.GlobalExceptionHandler;
 import ru.tmobile.backend.repository.FamilyGroupRepository;
 import ru.tmobile.backend.repository.GroupMemberRepository;
+import ru.tmobile.backend.repository.UserRepository;
 import ru.tmobile.backend.security.AuthContext;
 import ru.tmobile.backend.service.FamilyGroupService;
+import ru.tmobile.backend.service.GroupDetailsService;
 
 class FamilyGroupControllerTest {
     MockMvc mockMvc;
     FamilyGroupService familyGroupService;
+    GroupDetailsService groupDetailsService;
     FamilyGroupRepository groupRepository;
     GroupMemberRepository memberRepository;
+    UserRepository userRepository;
     ObjectMapper json;
 
     @BeforeEach void up() {
         familyGroupService = mock(FamilyGroupService.class);
+        groupDetailsService = mock(GroupDetailsService.class);
         groupRepository = mock(FamilyGroupRepository.class);
         memberRepository = mock(GroupMemberRepository.class);
+        userRepository = mock(UserRepository.class);
         mockMvc = MockMvcBuilders.standaloneSetup(
-                new FamilyGroupController(familyGroupService, groupRepository, memberRepository))
+                new FamilyGroupController(
+                    familyGroupService, groupDetailsService, groupRepository, memberRepository, userRepository))
             .setControllerAdvice(new GlobalExceptionHandler())
             .build();
         json = new ObjectMapper();
@@ -67,13 +76,28 @@ class FamilyGroupControllerTest {
     private FamilyGroupEntity grp(long id, long ownerId) {
         FamilyGroupEntity g = new FamilyGroupEntity();
         g.setId(id); g.setOwnerId(ownerId); g.setStatus(GroupStatus.ACTIVE);
-        g.setCreatedAt(OffsetDateTime.of(2026,1,1,0,0,0,0,ZoneOffset.UTC));
+        g.setCreatedAt(OffsetDateTime.of(2026, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC));
         return g;
     }
+
     private GroupMemberEntity membership(long gid, long uid) {
         GroupMemberEntity m = new GroupMemberEntity();
         m.setGroupId(gid); m.setUserId(uid); m.setStatus(MemberStatus.ACTIVE);
         return m;
+    }
+
+    private UserEntity user(long id, String phone, String name) {
+        UserEntity u = new UserEntity();
+        u.setId(id); u.setPhoneNumber(phone); u.setName(name);
+        u.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+        return u;
+    }
+
+    private GroupDetailResponse details(long groupId, long ownerId) {
+        return new GroupDetailResponse(
+            groupId, null, ownerId, GroupStatus.ACTIVE,
+            OffsetDateTime.of(2026, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC),
+            1, null, List.of(), null);
     }
 
     @Test void listGroupsReturnsSummaryForAllGroups() throws Exception {
@@ -98,14 +122,19 @@ class FamilyGroupControllerTest {
         when(groupRepository.findByIdAndStatus(5L, GroupStatus.ACTIVE)).thenReturn(Optional.of(g));
         when(memberRepository.findByGroupIdAndUserIdAndStatus(5L, 1L, MemberStatus.ACTIVE))
             .thenReturn(Optional.of(membership(5L, 1L)));
-        when(memberRepository.findByGroupIdAndStatus(5L, MemberStatus.ACTIVE)).thenReturn(List.of(membership(5L, 1L)));
+        when(groupDetailsService.toDetailResponse(g)).thenReturn(details(5L, 1L));
 
         mockMvc.perform(get("/api/v1/groups/5"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.group_id").value(5))
-            .andExpect(jsonPath("$.members_count").value(1))
-            .andExpect(jsonPath("$.owner_name").doesNotExist())
+            .andExpect(jsonPath("$.owner_id").value(1))
+            .andExpect(jsonPath("$.status").value("ACTIVE"))
+            .andExpect(jsonPath("$.member_count").value(1))
+            .andExpect(jsonPath("$.members").isArray())
+            .andExpect(jsonPath("$.package").doesNotExist())
+            .andExpect(jsonPath("$.transfer_pending").doesNotExist())
             .andExpect(jsonPath("$.name").doesNotExist());
+        verify(groupDetailsService).toDetailResponse(g);
     }
 
     @Test void getGroupForbiddenForNonMember() throws Exception {
@@ -123,7 +152,7 @@ class FamilyGroupControllerTest {
         FamilyGroupEntity g = grp(5L, 1L);
         AuthContext.set(new AuthContext.UserContext(9L, "ADMIN"));
         when(groupRepository.findByIdAndStatus(5L, GroupStatus.ACTIVE)).thenReturn(Optional.of(g));
-        when(memberRepository.findByGroupIdAndStatus(5L, MemberStatus.ACTIVE)).thenReturn(List.of());
+        when(groupDetailsService.toDetailResponse(g)).thenReturn(details(5L, 1L));
 
         mockMvc.perform(get("/api/v1/groups/5"))
             .andExpect(status().isOk())
@@ -141,13 +170,18 @@ class FamilyGroupControllerTest {
     @Test void createGroupReturns201AndDelegatesToService() throws Exception {
         FamilyGroupEntity saved = grp(42L, 1L);
         when(familyGroupService.createGroup(eq(1L), any())).thenReturn(saved);
-        when(memberRepository.findByGroupIdAndStatus(42L, MemberStatus.ACTIVE)).thenReturn(List.of());
+        when(groupDetailsService.toDetailResponse(saved)).thenReturn(details(42L, 1L));
 
         mockMvc.perform(post("/api/v1/groups")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsString(new FamilyGroupCreateRequest(1L, List.of(2L, 3L)))))
             .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.group_id").value(42));
+            .andExpect(jsonPath("$.group_id").value(42))
+            .andExpect(jsonPath("$.owner_id").value(1))
+            .andExpect(jsonPath("$.status").value("ACTIVE"))
+            .andExpect(jsonPath("$.member_count").value(1))
+            .andExpect(jsonPath("$.members").isArray());
+        verify(groupDetailsService).toDetailResponse(saved);
     }
 
     @Test void addMemberReturns201() throws Exception {
@@ -213,5 +247,88 @@ class FamilyGroupControllerTest {
         mockMvc.perform(post("/api/v1/groups/5/disband"))
             .andExpect(status().isNoContent());
         verify(familyGroupService).disbandGroup(5L, null);
+    }
+
+    @Test void getMyGroupReturnsActiveGroupDetails() throws Exception {
+        AuthContext.set(new AuthContext.UserContext(1L, "OWNER"));
+        GroupMemberEntity m = membership(10L, 1L);
+        FamilyGroupEntity group = grp(10L, 1L);
+        when(memberRepository.findByUserIdAndStatus(1L, MemberStatus.ACTIVE))
+            .thenReturn(Optional.of(m));
+        when(groupRepository.findByIdAndStatus(10L, GroupStatus.ACTIVE)).thenReturn(Optional.of(group));
+        when(groupDetailsService.toDetailResponse(group)).thenReturn(details(10L, 1L));
+
+        mockMvc.perform(get("/api/v1/groups/me"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.group_id").value(10))
+            .andExpect(jsonPath("$.owner_id").value(1))
+            .andExpect(jsonPath("$.status").value("ACTIVE"))
+            .andExpect(jsonPath("$.created_at").value("2026-01-01T00:00:00Z"))
+            .andExpect(jsonPath("$.member_count").value(1))
+            .andExpect(jsonPath("$.members").isArray())
+            .andExpect(jsonPath("$.package").doesNotExist())
+            .andExpect(jsonPath("$.transfer_pending").doesNotExist())
+            .andExpect(jsonPath("$.role").doesNotExist());
+        verify(groupDetailsService).toDetailResponse(group);
+    }
+
+    @Test void getMyGroupReturns404WhenNoActiveGroup() throws Exception {
+        AuthContext.set(new AuthContext.UserContext(1L, "SUBSCRIBER"));
+        when(memberRepository.findByUserIdAndStatus(1L, MemberStatus.ACTIVE))
+            .thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/api/v1/groups/me"))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.error.code").value("GROUP_NOT_FOUND"));
+    }
+
+    @Test void getMyGroupReturns404WhenGroupIsNotActive() throws Exception {
+        AuthContext.set(new AuthContext.UserContext(1L, "OWNER"));
+        GroupMemberEntity m = membership(10L, 1L);
+        when(memberRepository.findByUserIdAndStatus(1L, MemberStatus.ACTIVE)).thenReturn(Optional.of(m));
+        when(groupRepository.findByIdAndStatus(10L, GroupStatus.ACTIVE)).thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/api/v1/groups/me"))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.error.code").value("GROUP_NOT_FOUND"));
+    }
+
+    @Test void getMyGroupReturns401WithoutAuth() throws Exception {
+        mockMvc.perform(get("/api/v1/groups/me"))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
+    }
+
+    @Test void getContactsReturnsUsersWithoutActiveGroup() throws Exception {
+        AuthContext.set(new AuthContext.UserContext(1L, "OWNER"));
+        UserEntity freeUser = user(2L, "+79990000002", "Пётр");
+        UserEntity busyUser = user(3L, "+79990000003", "Иван");
+        when(userRepository.findAll()).thenReturn(List.of(freeUser, busyUser));
+        when(memberRepository.findUserIdsByStatus(MemberStatus.ACTIVE))
+            .thenReturn(List.of(1L, 3L)); // 1L — caller, 3L — в группе
+
+        mockMvc.perform(get("/api/v1/groups/contacts"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.contacts.length()").value(1))
+            .andExpect(jsonPath("$.contacts[0].user_id").value(2))
+            .andExpect(jsonPath("$.contacts[0].phone_number").value("+79990000002"))
+            .andExpect(jsonPath("$.contacts[0].name").value("Пётр"));
+    }
+
+    @Test void getContactsReturnsEmptyListWhenAllUsersInGroups() throws Exception {
+        AuthContext.set(new AuthContext.UserContext(1L, "OWNER"));
+        when(userRepository.findAll()).thenReturn(List.of(user(2L, "+79990000002", "Пётр")));
+        when(memberRepository.findUserIdsByStatus(MemberStatus.ACTIVE))
+            .thenReturn(List.of(1L, 2L));
+
+        mockMvc.perform(get("/api/v1/groups/contacts"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.contacts.length()").value(0));
+    }
+
+    @Test void getContactsReturns401WithoutAuth() throws Exception {
+        mockMvc.perform(get("/api/v1/groups/contacts"))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
     }
 }

@@ -3,6 +3,10 @@ package ru.tmobile.backend.controller;
 import lombok.RequiredArgsConstructor;
 
 import org.springframework.web.bind.annotation.*;
+
+import ru.tmobile.backend.dto.auth.UpdateUserRequest;
+import ru.tmobile.backend.dto.auth.UserProfileResponse;
+import ru.tmobile.backend.exception.AuthenticationException;
 import ru.tmobile.backend.entity.FamilyGroupEntity;
 import ru.tmobile.backend.entity.GroupMemberEntity;
 import ru.tmobile.backend.entity.UserEntity;
@@ -10,11 +14,17 @@ import ru.tmobile.backend.entity.GroupMemberEntity.MemberStatus;
 import ru.tmobile.backend.repository.FamilyGroupRepository;
 import ru.tmobile.backend.repository.GroupMemberRepository;
 import ru.tmobile.backend.repository.UserRepository;
+import ru.tmobile.backend.security.AuthContext;
+import ru.tmobile.backend.service.UserService;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import org.springframework.web.bind.annotation.GetMapping;
+
+import jakarta.validation.Valid;
+
 
 @RestController
 @RequestMapping("/api/v1/users")
@@ -24,6 +34,7 @@ public class UserController {
     private final UserRepository userRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final FamilyGroupRepository familyGroupRepository;
+    private final UserService userService;
 
     @GetMapping("/active")
     public List<Long> getActiveUsers() {
@@ -63,4 +74,23 @@ public class UserController {
             );
         }).collect(Collectors.toList());
     }
+
+    @GetMapping("/me")
+    public UserProfileResponse getProfile() {
+        Long userId = AuthContext.getUserId();
+        if (userId == null) {
+            throw new AuthenticationException("UNAUTHENTICATED", "User not authenticated");
+        }
+        return userService.getProfile(userId);
+    }
+
+    @PatchMapping("/me")
+    public UserProfileResponse updateProfile(@Valid @RequestBody UpdateUserRequest request) {
+        Long userId = AuthContext.getUserId();
+        if (userId == null) {
+            throw new AuthenticationException("UNAUTHENTICATED", "User not authenticated");
+        }
+        return userService.updateProfile(userId, request);
+    }
+    
 }

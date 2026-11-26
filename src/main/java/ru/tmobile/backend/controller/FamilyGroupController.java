@@ -7,19 +7,27 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
+
 import ru.tmobile.backend.dto.familyGroup.AddMemberRequest;
+import ru.tmobile.backend.dto.familyGroup.Contact;
+import ru.tmobile.backend.dto.familyGroup.ContactsResponse;
 import ru.tmobile.backend.dto.familyGroup.FamilyGroupCreateRequest;
 import ru.tmobile.backend.dto.familyGroup.FamilyGroupResponse;
+import ru.tmobile.backend.dto.familyGroup.GroupDetailResponse;
 import ru.tmobile.backend.dto.familyGroup.LeaveGroupRequest;
 import ru.tmobile.backend.dto.familyGroup.TransferOwnershipRequest;
 import ru.tmobile.backend.entity.FamilyGroupEntity;
+import ru.tmobile.backend.entity.GroupMemberEntity;
+import ru.tmobile.backend.exception.AuthenticationException;
 import ru.tmobile.backend.exception.AuthorizationException;
 import ru.tmobile.backend.exception.BusinessRuleViolationException;
 import ru.tmobile.backend.entity.FamilyGroupEntity.GroupStatus;
 import ru.tmobile.backend.entity.GroupMemberEntity.MemberStatus;
 import ru.tmobile.backend.repository.FamilyGroupRepository;
 import ru.tmobile.backend.repository.GroupMemberRepository;
+import ru.tmobile.backend.repository.UserRepository;
 import ru.tmobile.backend.service.FamilyGroupService;
+import ru.tmobile.backend.service.GroupDetailsService;
 import ru.tmobile.backend.security.AuthContext;
 
 import java.util.List;
@@ -30,8 +38,10 @@ import java.util.List;
 public class FamilyGroupController {
 
     private final FamilyGroupService familyGroupService;
+    private final GroupDetailsService groupDetailsService;
     private final FamilyGroupRepository groupRepository;
     private final GroupMemberRepository memberRepository;
+    private final UserRepository userRepository;
 
     @GetMapping
     public List<FamilyGroupResponse> getGroups() {
@@ -41,9 +51,10 @@ public class FamilyGroupController {
     }
 
     @GetMapping("/{groupId}")
-    public FamilyGroupResponse getGroup(@PathVariable Long groupId) {
+    public GroupDetailResponse getGroup(@PathVariable Long groupId) {
         FamilyGroupEntity group = groupRepository.findByIdAndStatus(groupId, GroupStatus.ACTIVE)
-            .orElseThrow(() -> new BusinessRuleViolationException("GROUP_NOT_FOUND", "Group not found: " + groupId, HttpStatus.NOT_FOUND));
+            .orElseThrow(() -> new BusinessRuleViolationException(
+                "GROUP_NOT_FOUND", "Group not found: " + groupId, HttpStatus.NOT_FOUND));
 
         Long callerId = AuthContext.getUserId();
         boolean isAdmin = "ADMIN".equals(AuthContext.getRole());
@@ -54,16 +65,13 @@ public class FamilyGroupController {
             throw new AuthorizationException("FORBIDDEN", "User is not a member of the group");
         }
 
-        return toResponse(group);
+        return groupDetailsService.toDetailResponse(group);
     }
 
     @PostMapping
-    public ResponseEntity<FamilyGroupResponse> createGroup(@Valid @RequestBody FamilyGroupCreateRequest request) {
-        FamilyGroupEntity group = familyGroupService.createGroup(
-            request.ownerId(), 
-            request.memberIds()
-        );
-        return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(group));
+    public ResponseEntity<GroupDetailResponse> createGroup(@Valid @RequestBody FamilyGroupCreateRequest request) {
+        FamilyGroupEntity group = familyGroupService.createGroup(request.ownerId(), request.memberIds());
+        return ResponseEntity.status(HttpStatus.CREATED).body(groupDetailsService.toDetailResponse(group));
     }
 
     @PostMapping("/{groupId}/members")
@@ -101,8 +109,42 @@ public class FamilyGroupController {
         return ResponseEntity.noContent().build();
     }
 
+    @GetMapping("/me")
+    public GroupDetailResponse getMyGroup() {
+        Long callerId = AuthContext.getUserId();
+        if (callerId == null) {
+            throw new AuthenticationException("UNAUTHENTICATED", "User not authenticated");
+        }
+        GroupMemberEntity membership = memberRepository
+            .findByUserIdAndStatus(callerId, MemberStatus.ACTIVE)
+            .orElseThrow(() -> new BusinessRuleViolationException(
+                "GROUP_NOT_FOUND", "User has no active group", HttpStatus.NOT_FOUND));
+
+        FamilyGroupEntity group = groupRepository.findByIdAndStatus(membership.getGroupId(), GroupStatus.ACTIVE)
+            .orElseThrow(() -> new BusinessRuleViolationException(
+                "GROUP_NOT_FOUND", "User has no active group", HttpStatus.NOT_FOUND));
+
+        return groupDetailsService.toDetailResponse(group);
+    }
+
+    @GetMapping("/contacts")
+    public ContactsResponse getContacts() {
+        Long callerId = AuthContext.getUserId();
+        if (callerId == null) {
+            throw new AuthenticationException("UNAUTHENTICATED", "User not authenticated");
+        }
+
+        List<Long> busyUserIds = memberRepository.findUserIdsByStatus(MemberStatus.ACTIVE);
+        List<Contact> contacts = userRepository.findAll().stream()
+            .filter(u -> !busyUserIds.contains(u.getId()))
+            .map(u -> new Contact(u.getId(), u.getPhoneNumber(), u.getName()))
+            .toList();
+
+        return new ContactsResponse(contacts);
+    }
+
     private FamilyGroupResponse toResponse(FamilyGroupEntity group) {
-        int membersCount = memberRepository.findByGroupIdAndStatus(group.getId(),MemberStatus.ACTIVE).size();
+        int membersCount = memberRepository.findByGroupIdAndStatus(group.getId(), MemberStatus.ACTIVE).size();
         return new FamilyGroupResponse(
             group.getId(),
             group.getOwnerId(),

@@ -10,4 +10,5 @@ import java.util.Optional;
 public interface UserLimitRepository extends JpaRepository<UserLimitEntity, UserLimitEntity.UserLimitId> {
     Optional<UserLimitEntity> findByUserIdAndGroupIdAndResourceType(Long userId, Long groupId, ResourceType resourceType);
     List<UserLimitEntity> findAllByGroupIdAndResourceType(Long groupId, ResourceType resourceType);
+    List<UserLimitEntity> findAllByGroupId(Long groupId);
 }

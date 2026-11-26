@@ -4,11 +4,13 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -31,7 +33,9 @@ import ru.tmobile.backend.dto.familyGroup.AddMemberRequest;
 import ru.tmobile.backend.dto.familyGroup.FamilyGroupCreateRequest;
 import ru.tmobile.backend.dto.familyGroup.GroupDetailResponse;
 import ru.tmobile.backend.dto.familyGroup.LeaveGroupRequest;
+import ru.tmobile.backend.dto.familyGroup.SetLimitRequest;
 import ru.tmobile.backend.dto.familyGroup.TransferOwnershipRequest;
+import ru.tmobile.backend.dto.familyGroup.UserLimitResponse;
 import ru.tmobile.backend.entity.FamilyGroupEntity;
 import ru.tmobile.backend.entity.FamilyGroupEntity.GroupStatus;
 import ru.tmobile.backend.entity.GroupMemberEntity;
@@ -45,6 +49,7 @@ import ru.tmobile.backend.repository.UserRepository;
 import ru.tmobile.backend.security.AuthContext;
 import ru.tmobile.backend.service.FamilyGroupService;
 import ru.tmobile.backend.service.GroupDetailsService;
+import ru.tmobile.backend.service.UserLimitService;
 
 class FamilyGroupControllerTest {
     MockMvc mockMvc;
@@ -53,6 +58,7 @@ class FamilyGroupControllerTest {
     FamilyGroupRepository groupRepository;
     GroupMemberRepository memberRepository;
     UserRepository userRepository;
+    UserLimitService userLimitService;
     ObjectMapper json;
 
     @BeforeEach void up() {
@@ -61,9 +67,10 @@ class FamilyGroupControllerTest {
         groupRepository = mock(FamilyGroupRepository.class);
         memberRepository = mock(GroupMemberRepository.class);
         userRepository = mock(UserRepository.class);
+        userLimitService = mock(UserLimitService.class);
         mockMvc = MockMvcBuilders.standaloneSetup(
                 new FamilyGroupController(
-                    familyGroupService, groupDetailsService, groupRepository, memberRepository, userRepository))
+                    familyGroupService, groupDetailsService, groupRepository, memberRepository, userRepository, userLimitService))
             .setControllerAdvice(new GlobalExceptionHandler())
             .build();
         json = new ObjectMapper();
@@ -330,5 +337,34 @@ class FamilyGroupControllerTest {
         mockMvc.perform(get("/api/v1/groups/contacts"))
             .andExpect(status().isUnauthorized())
             .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
+    }
+
+    @Test void setMemberLimitReturnsResponseAndDelegatesToUserLimitService() throws Exception {
+        AuthContext.set(new AuthContext.UserContext(1L, "OWNER"));
+        UserLimitResponse response = new UserLimitResponse(
+            2L, 5L, "TRAFFIC", 100.0, 10.0, "ACTIVE", 50.0, 1000.0);
+        when(userLimitService.setMemberLimit(5L, 2L, "TRAFFIC", 100.0, 1L)).thenReturn(response);
+
+        mockMvc.perform(put("/api/v1/groups/5/members/2/limits")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(new SetLimitRequest("TRAFFIC", 100.0))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.user_id").value(2))
+            .andExpect(jsonPath("$.group_id").value(5))
+            .andExpect(jsonPath("$.resource_type").value("TRAFFIC"))
+            .andExpect(jsonPath("$.limit_value").value(100.0))
+            .andExpect(jsonPath("$.used_value").value(10.0))
+            .andExpect(jsonPath("$.status").value("ACTIVE"))
+            .andExpect(jsonPath("$.min_allowed").value(50.0))
+            .andExpect(jsonPath("$.max_allowed").value(1000.0));
+        verify(userLimitService).setMemberLimit(5L, 2L, "TRAFFIC", 100.0, 1L);
+    }
+
+    @Test void setMemberLimitRejectsMissingResourceType() throws Exception {
+        mockMvc.perform(put("/api/v1/groups/5/members/2/limits")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"limit_value\":100.0}"))
+            .andExpect(status().isBadRequest());
+        verify(userLimitService, never()).setMemberLimit(any(), any(), any(), any(), any());
     }
 }

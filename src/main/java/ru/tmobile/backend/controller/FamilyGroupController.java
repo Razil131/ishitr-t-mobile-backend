@@ -15,7 +15,9 @@ import ru.tmobile.backend.dto.familyGroup.FamilyGroupCreateRequest;
 import ru.tmobile.backend.dto.familyGroup.FamilyGroupResponse;
 import ru.tmobile.backend.dto.familyGroup.GroupDetailResponse;
 import ru.tmobile.backend.dto.familyGroup.LeaveGroupRequest;
+import ru.tmobile.backend.dto.familyGroup.SetLimitRequest;
 import ru.tmobile.backend.dto.familyGroup.TransferOwnershipRequest;
+import ru.tmobile.backend.dto.familyGroup.UserLimitResponse;
 import ru.tmobile.backend.entity.FamilyGroupEntity;
 import ru.tmobile.backend.entity.GroupMemberEntity;
 import ru.tmobile.backend.exception.AuthenticationException;
@@ -28,6 +30,7 @@ import ru.tmobile.backend.repository.GroupMemberRepository;
 import ru.tmobile.backend.repository.UserRepository;
 import ru.tmobile.backend.service.FamilyGroupService;
 import ru.tmobile.backend.service.GroupDetailsService;
+import ru.tmobile.backend.service.UserLimitService;
 import ru.tmobile.backend.security.AuthContext;
 
 import java.util.List;
@@ -42,6 +45,7 @@ public class FamilyGroupController {
     private final FamilyGroupRepository groupRepository;
     private final GroupMemberRepository memberRepository;
     private final UserRepository userRepository;
+    private final UserLimitService userLimitService;
 
     @GetMapping
     public List<FamilyGroupResponse> getGroups() {
@@ -141,6 +145,16 @@ public class FamilyGroupController {
             .toList();
 
         return new ContactsResponse(contacts);
+    }
+
+    @PutMapping("/{groupId}/members/{userId}/limits")
+    public UserLimitResponse setMemberLimit(
+            @PathVariable Long groupId,
+            @PathVariable Long userId,
+            @Valid @RequestBody SetLimitRequest request) {
+        Long callerId = AuthContext.getUserId();
+        return userLimitService.setMemberLimit(
+            groupId, userId, request.resourceType(), request.limitValue(), callerId);
     }
 
     private FamilyGroupResponse toResponse(FamilyGroupEntity group) {

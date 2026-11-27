@@ -1,7 +1,8 @@
 package ru.tmobile.backend.service;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.verify;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -77,8 +78,8 @@ class GroupAuditServiceTest {
     @Test
     @SuppressWarnings("unchecked")
     void saveAllDelegatesToRepository() {
-        AuditLogEntity first = svc.log(10L, 1L, 1L, ActionType.ADD_MEMBER, now, Map.of("role", "OWNER"));
-        AuditLogEntity second = svc.log(10L, 1L, 2L, ActionType.ADD_MEMBER, now, Map.of("role", "MEMBER"));
+        AuditLogEntity first = svc.log(10L, 1L, 1L, ActionType.MEMBER_ADDED, now, Map.of("role", "OWNER"));
+        AuditLogEntity second = svc.log(10L, 1L, 2L, ActionType.MEMBER_ADDED, now, Map.of("role", "MEMBER"));
         List<AuditLogEntity> audits = List.of(first, second);
 
         svc.saveAll(audits);

@@ -4,7 +4,6 @@ import java.util.List;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,6 +20,7 @@ import ru.tmobile.backend.dto.familyGroup.ContactsResponse;
 import ru.tmobile.backend.dto.familyGroup.FamilyGroupCreateRequest;
 import ru.tmobile.backend.dto.familyGroup.FamilyGroupResponse;
 import ru.tmobile.backend.dto.familyGroup.GroupDetailResponse;
+import ru.tmobile.backend.dto.familyGroup.GroupLimitResponse;
 import ru.tmobile.backend.dto.familyGroup.SetLimitRequest;
 import ru.tmobile.backend.dto.familyGroup.TransferOwnershipRequest;
 import ru.tmobile.backend.dto.familyGroup.TransferPendingResponse;
@@ -90,13 +90,6 @@ public class FamilyGroupController {
         Long callerId = AuthContext.getUserId();
         familyGroupService.addMember(groupId, request.userId(), callerId);
         return ResponseEntity.status(HttpStatus.CREATED).build();
-    }
-
-    @DeleteMapping("/{groupId}/members/{userId}")
-    public ResponseEntity<Void> removeMember(@PathVariable Long groupId, @PathVariable Long userId) {
-        Long callerId = AuthContext.getUserId();
-        familyGroupService.removeMember(groupId, userId, callerId);
-        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{groupId}/members/{userId}/exclude")
@@ -177,6 +170,18 @@ public class FamilyGroupController {
         Long callerId = AuthContext.getUserId();
         return userLimitService.setMemberLimit(
             groupId, userId, request.resourceType(), request.limitValue(), callerId);
+    }
+
+    @GetMapping("/{groupId}/limits")
+    public GroupLimitResponse getGroupLimit(@PathVariable Long groupId) {
+        FamilyGroupEntity group = groupRepository.findByIdAndStatus(groupId, GroupStatus.ACTIVE)
+            .orElseThrow(() -> new BusinessRuleViolationException(
+                "GROUP_NOT_FOUND", "Group not found " + groupId, HttpStatus.NOT_FOUND));
+        Long callerId = AuthContext.getUserId();
+        if (callerId == null) {
+            throw new AuthenticationException("UNAUTHENTICATED", "User nit authenticated");
+        }
+        return groupDetailsService.toLimitResponse(group, callerId);
     }
 
     private FamilyGroupResponse toResponse(FamilyGroupEntity group) {

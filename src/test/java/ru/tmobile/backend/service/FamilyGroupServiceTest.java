@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -219,7 +220,7 @@ class FamilyGroupServiceTest {
         ArgumentCaptor<List<AuditLogEntity>> cap = ArgumentCaptor.forClass(List.class);
         verify(auditService).saveAll(cap.capture());
         assertEquals(2, cap.getValue().size());
-        assertTrue(cap.getValue().stream().allMatch(a -> a.getActionType() == ActionType.ADD_MEMBER));
+        assertTrue(cap.getValue().stream().allMatch(a -> a.getActionType() == ActionType.MEMBER_ADDED));
     }
 
     @Test
@@ -294,50 +295,6 @@ class FamilyGroupServiceTest {
         BusinessRuleViolationException ex = assertThrows(BusinessRuleViolationException.class,
             () -> svc.addMember(10L, 5L, 1L));
         assertEquals("BR_11_GROUP_IS_FULL", ex.getErrorCode());
-    }
-
-    @Test
-    void removeMemberMarksTargetAsExcludedAndDelegatesLimitInvalidation() {
-        setupSingleSaveStubs();
-        FamilyGroupEntity g = group(10L, 1L, GroupStatus.ACTIVE);
-        GroupMemberEntity target = member(10L, 5L, MemberRole.MEMBER, MemberStatus.ACTIVE);
-        when(groupRepo.findByIdAndStatus(10L, GroupStatus.ACTIVE)).thenReturn(Optional.of(g));
-        when(memberRepo.findByGroupIdAndUserIdAndStatus(10L, 5L, MemberStatus.ACTIVE))
-            .thenReturn(Optional.of(target));
-
-        svc.removeMember(10L, 5L, 1L);
-
-        assertEquals(MemberStatus.EXCLUDED, target.getStatus());
-        verify(memberRepo).save(target);
-        verify(userLimitService).invalidateMemberLimits(10L, 5L);
-
-        ArgumentCaptor<AuditLogEntity> cap = ArgumentCaptor.forClass(AuditLogEntity.class);
-        verify(auditService).save(cap.capture());
-        assertEquals(ActionType.MEMBER_EXCLUDED, cap.getValue().getActionType());
-        assertEquals(1L, cap.getValue().getActorUserId());
-        assertEquals(5L, cap.getValue().getTargetUserId());
-    }
-
-    @Test
-    void removeMemberRejectsOwnerRemoval() {
-        FamilyGroupEntity g = group(10L, 1L, GroupStatus.ACTIVE);
-        when(groupRepo.findByIdAndStatus(10L, GroupStatus.ACTIVE)).thenReturn(Optional.of(g));
-
-        BusinessRuleViolationException ex = assertThrows(BusinessRuleViolationException.class,
-            () -> svc.removeMember(10L, 1L, 1L));
-        assertEquals("BR_22_REMOVE_OWNER", ex.getErrorCode());
-    }
-
-    @Test
-    void removeMemberRejectsWhenTargetNotInGroup() {
-        FamilyGroupEntity g = group(10L, 1L, GroupStatus.ACTIVE);
-        when(groupRepo.findByIdAndStatus(10L, GroupStatus.ACTIVE)).thenReturn(Optional.of(g));
-        when(memberRepo.findByGroupIdAndUserIdAndStatus(10L, 5L, MemberStatus.ACTIVE))
-            .thenReturn(Optional.empty());
-
-        BusinessRuleViolationException ex = assertThrows(BusinessRuleViolationException.class,
-            () -> svc.removeMember(10L, 5L, 1L));
-        assertEquals("USER_NOT_IN_TARGET_GROUP", ex.getErrorCode());
     }
 
     @Test
@@ -465,7 +422,7 @@ class FamilyGroupServiceTest {
 
         ArgumentCaptor<AuditLogEntity> cap = ArgumentCaptor.forClass(AuditLogEntity.class);
         verify(auditService).save(cap.capture());
-        assertEquals(ActionType.DISBAND_GROUP, cap.getValue().getActionType());
+        assertEquals(ActionType.GROUP_DISBANDED, cap.getValue().getActionType());
     }
 
     @Test
@@ -541,5 +498,41 @@ class FamilyGroupServiceTest {
         assertEquals("CANNOT_EXCLUDE_SELF", ex.getErrorCode());
         assertEquals(HttpStatus.CONFLICT, ex.getHttpStatus());
         verifyNoInteractions(memberRepo, userLimitService, auditService);
+    }
+
+    @Test
+    void leaveGroupCancelsPendingTransferWhenLeaverIsTarget() {
+        setupSingleSaveStubs();
+        Long groupId = 10L, ownerId = 1L, targetId = 5L;
+        FamilyGroupEntity g = group(groupId, ownerId, GroupStatus.ACTIVE);
+        TransferPendingInfo pending = new TransferPendingInfo(ownerId, targetId, OffsetDateTime.now());
+        g.setPendingTransfer(pending);
+        GroupMemberEntity leaver = member(groupId, targetId, MemberRole.MEMBER, MemberStatus.ACTIVE);
+        when(groupRepo.findByIdAndStatus(groupId, GroupStatus.ACTIVE)).thenReturn(Optional.of(g));
+        when(memberRepo.findByGroupIdAndUserIdAndStatus(groupId, targetId, MemberStatus.ACTIVE))
+            .thenReturn(Optional.of(leaver));
+
+        svc.leaveGroup(groupId, targetId);
+
+        assertNull(g.getPendingTransfer());
+        verify(groupRepo, atLeastOnce()).save(g);
+    }
+
+    @Test
+    void excludeMemberCancelsPendingTransferWhenTargetIsPendingNewOwner() {
+        setupSingleSaveStubs();
+        Long groupId = 10L, ownerId = 1L, targetId = 5L;
+        FamilyGroupEntity g = group(groupId, ownerId, GroupStatus.ACTIVE);
+        TransferPendingInfo pending = new TransferPendingInfo(ownerId, targetId, OffsetDateTime.now());
+        g.setPendingTransfer(pending);
+        GroupMemberEntity target = member(groupId, targetId, MemberRole.MEMBER, MemberStatus.ACTIVE);
+        when(groupRepo.findByIdAndStatus(groupId, GroupStatus.ACTIVE)).thenReturn(Optional.of(g));
+        when(memberRepo.findByGroupIdAndUserIdAndStatus(groupId, targetId, MemberStatus.ACTIVE))
+            .thenReturn(Optional.of(target));
+
+        svc.excludeMember(groupId, targetId, ownerId);
+
+        assertNull(g.getPendingTransfer());
+        verify(groupRepo, atLeastOnce()).save(g);
     }
 }

@@ -63,11 +63,11 @@ public class FamilyGroupService {
 
         groupMemberRepository.saveAll(groupMembers);
 
-        var ownerAudit = auditService.log(newGroup.getId(), ownerId, ownerId, ActionType.ADD_MEMBER, now, Map.of("role","OWNER"));
+        var ownerAudit = auditService.log(newGroup.getId(), ownerId, ownerId, ActionType.MEMBER_ADDED, now, Map.of("role","OWNER"));
         List<ru.tmobile.backend.entity.AuditLogEntity> auditLogs = new ArrayList<>();
         auditLogs.add(ownerAudit);
         for (Long memberId:memberIds){
-            var audit = auditService.log(newGroup.getId(), ownerId, memberId, ActionType.ADD_MEMBER, now, Map.of("role","MEMBER"));
+            var audit = auditService.log(newGroup.getId(), ownerId, memberId, ActionType.MEMBER_ADDED, now, Map.of("role","MEMBER"));
             auditLogs.add(audit);
         }
         auditService.saveAll(auditLogs);
@@ -154,7 +154,7 @@ public class FamilyGroupService {
         Long ownerId = group.getOwnerId();
         GroupMemberEntity groupMember = createMember(groupId, userId, MemberRole.MEMBER, now);
         groupMemberRepository.save(groupMember);
-        var audit = auditService.log(groupId, ownerId, userId, ActionType.ADD_MEMBER, now, Map.of("role","MEMBER"));
+        var audit = auditService.log(groupId, ownerId, userId, ActionType.MEMBER_ADDED, now, Map.of("role","MEMBER"));
         auditService.save(audit);
     }
 
@@ -193,33 +193,6 @@ public class FamilyGroupService {
     }
 
     @Transactional
-    public void removeMember(Long groupId, Long targetUserId, Long callerId){
-        FamilyGroupEntity group = familyGroupRepository.findByIdAndStatus(groupId, GroupStatus.ACTIVE)
-            .orElseThrow(() -> new BusinessRuleViolationException("GROUP_NOT_FOUND", "Group not found: " + groupId, HttpStatus.NOT_FOUND));
-        validateOwnerAccess(group, callerId);
-        Long ownerId = group.getOwnerId();
-        if (targetUserId.equals(ownerId)){
-            throw new BusinessRuleViolationException(
-                "BR_22_REMOVE_OWNER",
-                "You cant remove owner: " + ownerId,
-                HttpStatus.BAD_REQUEST
-            );
-        }
-
-        GroupMemberEntity targetUser = groupMemberRepository.findByGroupIdAndUserIdAndStatus(groupId,targetUserId,MemberStatus.ACTIVE)
-            .orElseThrow(() -> new BusinessRuleViolationException("USER_NOT_IN_TARGET_GROUP","user is not in the target group: " + groupId,HttpStatus.NOT_FOUND));
-
-        targetUser.setStatus(MemberStatus.EXCLUDED);
-        groupMemberRepository.save(targetUser);
-        userLimitService.invalidateMemberLimits(groupId, targetUserId);
-
-        OffsetDateTime now = virtualClock.instant().atZone(ZoneId.systemDefault()).toOffsetDateTime();
-        var audit = auditService.log(groupId, ownerId, targetUserId, ActionType.MEMBER_EXCLUDED, now, Map.of("previous_role","MEMBER"));
-        auditService.save(audit);
-
-    }
-
-    @Transactional
     public void excludeMember(Long groupId, Long targetUserId, Long callerId) {
         FamilyGroupEntity group = familyGroupRepository.findByIdAndStatus(groupId, GroupStatus.ACTIVE)
             .orElseThrow(() -> new BusinessRuleViolationException(
@@ -239,6 +212,7 @@ public class FamilyGroupService {
         target.setStatus(MemberStatus.EXCLUDED);
         groupMemberRepository.save(target);
         userLimitService.invalidateMemberLimits(groupId, targetUserId);
+        cancelPendingTransferIfTarget(group, targetUserId);
 
         OffsetDateTime now = virtualClock.instant().atZone(ZoneId.systemDefault()).toOffsetDateTime();
         var audit = auditService.log(groupId, callerId, targetUserId, ActionType.MEMBER_EXCLUDED, now,
@@ -269,11 +243,20 @@ public class FamilyGroupService {
         member.setStatus(MemberStatus.LEAVE);
         groupMemberRepository.save(member);
         userLimitService.invalidateMemberLimits(groupId, callerId);
+        cancelPendingTransferIfTarget(group, callerId);
 
         OffsetDateTime now = virtualClock.instant().atZone(ZoneId.systemDefault()).toOffsetDateTime();
         var audit = auditService.log(groupId, callerId, callerId, ActionType.MEMBER_LEFT, now,
             Map.of("reason", "voluntary"));
         auditService.save(audit);
+    }
+
+    private void cancelPendingTransferIfTarget(FamilyGroupEntity group, Long userId) {
+        TransferPendingInfo pending = group.getPendingTransfer();
+        if (pending != null && pending.toUserId().equals(userId)) {
+            group.setPendingTransfer(null);
+            familyGroupRepository.save(group);
+        }
     }
 
     @Transactional
@@ -370,7 +353,7 @@ public class FamilyGroupService {
         group.setStatus(GroupStatus.DISBANDED);
         familyGroupRepository.save(group);
 
-        var audit = auditService.log(groupId, ownerId, ownerId, ActionType.DISBAND_GROUP, now,
+        var audit = auditService.log(groupId, ownerId, ownerId, ActionType.GROUP_DISBANDED, now,
             Map.of("members_count_at_disband", members.size()));
         auditService.save(audit);
     }

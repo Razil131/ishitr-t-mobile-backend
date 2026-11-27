@@ -4,7 +4,12 @@ import java.time.OffsetDateTime;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -39,11 +44,7 @@ public class AuditLogEntity {
 
 
     public enum ActionType {
-        ADD_MEMBER,
-        REMOVE_MEMBER,
-        CHANGE_LIMIT,
         TRANSFER_OWNERSHIP,
-        DISBAND_GROUP,
         GROUP_CREATED,
         MEMBER_ADDED,
         MEMBER_EXCLUDED,

@@ -7,7 +7,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -222,14 +221,8 @@ class FamilyGroupControllerTest {
             .andExpect(jsonPath("$.error.code").value("BR_01_USER_ALREADY_IN_GROUP"));
     }
 
-    @Test void removeMemberReturns204() throws Exception {
-        mockMvc.perform(delete("/api/v1/groups/5/members/7"))
-            .andExpect(status().isNoContent());
-        verify(familyGroupService).removeMember(5L, 7L, null);
-    }
-
     @Test void leaveGroupReturns204AndUsesCallerIdFromAuthContext() throws Exception {
-        AuthContext.set(new AuthContext.UserContext(7L, "MEMBER"));
+    AuthContext.set(new AuthContext.UserContext(7L, "MEMBER"));
 
         mockMvc.perform(post("/api/v1/groups/5/leave"))
             .andExpect(status().isNoContent());

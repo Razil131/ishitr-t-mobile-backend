@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS family_groups(
     owner_id BIGINT NOT NULL,
     status E_GROUP_STATUS NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    pending_transfer JSONB,
     CONSTRAINT fk_family_groups_owner FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE RESTRICT
 );
 

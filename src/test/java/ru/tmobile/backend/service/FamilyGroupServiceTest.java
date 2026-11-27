@@ -1,8 +1,17 @@
 package ru.tmobile.backend.service;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -17,6 +26,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 
+import ru.tmobile.backend.dto.familyGroup.TransferPendingInfo;
+import ru.tmobile.backend.dto.familyGroup.TransferPendingResponse;
 import ru.tmobile.backend.entity.AuditLogEntity;
 import ru.tmobile.backend.entity.AuditLogEntity.ActionType;
 import ru.tmobile.backend.entity.FamilyGroupEntity;
@@ -302,7 +313,7 @@ class FamilyGroupServiceTest {
 
         ArgumentCaptor<AuditLogEntity> cap = ArgumentCaptor.forClass(AuditLogEntity.class);
         verify(auditService).save(cap.capture());
-        assertEquals(ActionType.REMOVE_MEMBER, cap.getValue().getActionType());
+        assertEquals(ActionType.MEMBER_EXCLUDED, cap.getValue().getActionType());
         assertEquals(1L, cap.getValue().getActorUserId());
         assertEquals(5L, cap.getValue().getTargetUserId());
     }
@@ -330,93 +341,106 @@ class FamilyGroupServiceTest {
     }
 
     @Test
-    void leaveGroupMarksUserAsLeftAndDelegatesLimitInvalidation() {
-        setupSingleSaveStubs();
-        FamilyGroupEntity g = group(10L, 1L, GroupStatus.ACTIVE);
-        GroupMemberEntity me = member(10L, 5L, MemberRole.MEMBER, MemberStatus.ACTIVE);
-        when(groupRepo.findByIdAndStatus(10L, GroupStatus.ACTIVE)).thenReturn(Optional.of(g));
-        when(memberRepo.findByGroupIdAndUserIdAndStatus(10L, 5L, MemberStatus.ACTIVE))
-            .thenReturn(Optional.of(me));
+    void leaveGroupMarksMemberAsLeftAndDelegatesLimitInvalidation() {
+        Long groupId = 10L, memberId = 5L;
+        FamilyGroupEntity group = group(groupId, 1L, GroupStatus.ACTIVE);
+        GroupMemberEntity member = member(groupId, memberId, MemberRole.MEMBER, MemberStatus.ACTIVE);
+        when(groupRepo.findByIdAndStatus(groupId, GroupStatus.ACTIVE)).thenReturn(Optional.of(group));
+        when(memberRepo.findByGroupIdAndUserIdAndStatus(groupId, memberId, MemberStatus.ACTIVE))
+            .thenReturn(Optional.of(member));
+        when(clock.instant()).thenReturn(now.toInstant());
+        when(auditService.log(eq(groupId), eq(memberId), eq(memberId), eq(ActionType.MEMBER_LEFT), any(), any()))
+            .thenReturn(new AuditLogEntity());
 
-        svc.leaveGroup(10L, 5L, 5L);
+        svc.leaveGroup(groupId, memberId);
 
-        assertEquals(MemberStatus.LEAVE, me.getStatus());
-        verify(memberRepo).save(me);
-        verify(userLimitService).invalidateMemberLimits(10L, 5L);
-
-        ArgumentCaptor<AuditLogEntity> cap = ArgumentCaptor.forClass(AuditLogEntity.class);
-        verify(auditService).save(cap.capture());
-        assertEquals(ActionType.MEMBER_LEFT, cap.getValue().getActionType());
+        assertEquals(MemberStatus.LEAVE, member.getStatus());
+        verify(userLimitService).invalidateMemberLimits(groupId, memberId);
+        verify(auditService).save(any(AuditLogEntity.class));
     }
 
     @Test
-    void leaveGroupRejectsWhenCallerIsAnotherUser() {
-        FamilyGroupEntity g = group(10L, 1L, GroupStatus.ACTIVE);
-        when(groupRepo.findByIdAndStatus(10L, GroupStatus.ACTIVE)).thenReturn(Optional.of(g));
-
-        AuthorizationException ex = assertThrows(AuthorizationException.class,
-            () -> svc.leaveGroup(10L, 5L, 99L));
-        assertEquals("FORBIDDEN", ex.getErrorCode());
-    }
-
-    @Test
-    void leaveGroupRejectsOwnerLeave() {
-        FamilyGroupEntity g = group(10L, 1L, GroupStatus.ACTIVE);
-        when(groupRepo.findByIdAndStatus(10L, GroupStatus.ACTIVE)).thenReturn(Optional.of(g));
+    void leaveGroupRejectsOwner() {
+        Long groupId = 10L, ownerId = 1L;
+        when(groupRepo.findByIdAndStatus(groupId, GroupStatus.ACTIVE))
+            .thenReturn(Optional.of(group(groupId, ownerId, GroupStatus.ACTIVE)));
 
         BusinessRuleViolationException ex = assertThrows(BusinessRuleViolationException.class,
-            () -> svc.leaveGroup(10L, 1L, 1L));
-        assertEquals("BR_23_OWNER_LEAVE", ex.getErrorCode());
+            () -> svc.leaveGroup(groupId, ownerId));
+
+        assertEquals("OWNER_CANNOT_LEAVE", ex.getErrorCode());
+        assertEquals(HttpStatus.CONFLICT, ex.getHttpStatus());
+        verifyNoInteractions(memberRepo, userLimitService, auditService);
     }
 
     @Test
-    void transferOwnershipSwapsRolesAndUpdatesGroup() {
-        setupTransferStubs();
-        FamilyGroupEntity g = group(10L, 1L, GroupStatus.ACTIVE);
-        GroupMemberEntity oldOwner = member(10L, 1L, MemberRole.OWNER, MemberStatus.ACTIVE);
-        GroupMemberEntity newOwner = member(10L, 2L, MemberRole.MEMBER, MemberStatus.ACTIVE);
-        when(groupRepo.findByIdAndStatus(10L, GroupStatus.ACTIVE)).thenReturn(Optional.of(g));
-        when(memberRepo.findByGroupIdAndUserIdAndStatus(10L, 1L, MemberStatus.ACTIVE))
-            .thenReturn(Optional.of(oldOwner));
-        when(memberRepo.findByGroupIdAndUserIdAndStatus(10L, 2L, MemberStatus.ACTIVE))
-            .thenReturn(Optional.of(newOwner));
+    void initiateTransferSavesPendingAndReturnsResponse() {
+        Long groupId = 10L, ownerId = 1L, newOwnerId = 2L;
+        FamilyGroupEntity group = group(groupId, ownerId, GroupStatus.ACTIVE);
+        GroupMemberEntity target = member(groupId, newOwnerId, MemberRole.MEMBER, MemberStatus.ACTIVE);
+        when(groupRepo.findByIdAndStatus(groupId, GroupStatus.ACTIVE)).thenReturn(Optional.of(group));
+        when(memberRepo.findByGroupIdAndUserIdAndStatus(groupId, newOwnerId, MemberStatus.ACTIVE))
+            .thenReturn(Optional.of(target));
+        when(clock.instant()).thenReturn(now.toInstant());
 
-        svc.transferOwnership(10L, 2L, 1L);
+        TransferPendingResponse response = svc.initiateTransfer(groupId, newOwnerId, ownerId);
+
+        assertNotNull(group.getPendingTransfer());
+        assertEquals(ownerId, group.getPendingTransfer().fromUserId());
+        assertEquals(newOwnerId, group.getPendingTransfer().toUserId());
+        assertEquals(groupId, response.groupId());
+        verify(groupRepo).save(group);
+    }
+
+    @Test
+    void initiateTransferRejectsWhenPendingExists() {
+        Long groupId = 10L, ownerId = 1L;
+        FamilyGroupEntity group = group(groupId, ownerId, GroupStatus.ACTIVE);
+        group.setPendingTransfer(new TransferPendingInfo(ownerId, 2L, now));
+        when(groupRepo.findByIdAndStatus(groupId, GroupStatus.ACTIVE)).thenReturn(Optional.of(group));
+
+        BusinessRuleViolationException ex = assertThrows(BusinessRuleViolationException.class,
+            () -> svc.initiateTransfer(groupId, 3L, ownerId));
+
+        assertEquals("TRANSFER_ALREADY_PENDING", ex.getErrorCode());
+    }
+
+    @Test
+    void acceptTransferSwapsRolesClearsPendingAndWritesAudit() {
+        Long groupId = 10L, oldOwnerId = 1L, newOwnerId = 2L;
+        FamilyGroupEntity group = group(groupId, oldOwnerId, GroupStatus.ACTIVE);
+        group.setPendingTransfer(new TransferPendingInfo(oldOwnerId, newOwnerId, now));
+        GroupMemberEntity oldOwner = member(groupId, oldOwnerId, MemberRole.OWNER, MemberStatus.ACTIVE);
+        GroupMemberEntity newOwner = member(groupId, newOwnerId, MemberRole.MEMBER, MemberStatus.ACTIVE);
+
+        when(groupRepo.findByIdAndStatus(groupId, GroupStatus.ACTIVE)).thenReturn(Optional.of(group));
+        when(memberRepo.findByGroupIdAndUserIdAndStatus(groupId, oldOwnerId, MemberStatus.ACTIVE))
+            .thenReturn(Optional.of(oldOwner));
+        when(memberRepo.findByGroupIdAndUserIdAndStatus(groupId, newOwnerId, MemberStatus.ACTIVE))
+            .thenReturn(Optional.of(newOwner));
+        when(clock.instant()).thenReturn(now.toInstant());
+        when(auditService.log(eq(groupId), eq(oldOwnerId), eq(newOwnerId), eq(ActionType.OWNERSHIP_TRANSFERRED), any(), any()))
+            .thenReturn(new AuditLogEntity());
+
+        FamilyGroupEntity result = svc.acceptTransfer(groupId, newOwnerId);
 
         assertEquals(MemberRole.MEMBER, oldOwner.getRole());
         assertEquals(MemberRole.OWNER, newOwner.getRole());
-        assertEquals(2L, g.getOwnerId());
-        verify(groupRepo).save(g);
-
-        ArgumentCaptor<AuditLogEntity> cap = ArgumentCaptor.forClass(AuditLogEntity.class);
-        verify(auditService).save(cap.capture());
-        assertEquals(ActionType.OWNERSHIP_TRANSFERRED, cap.getValue().getActionType());
+        assertEquals(newOwnerId, result.getOwnerId());
+        assertNull(result.getPendingTransfer());
+        verify(auditService).save(any(AuditLogEntity.class));
     }
 
     @Test
-    void transferOwnershipRejectsSameOwner() {
-        FamilyGroupEntity g = group(10L, 1L, GroupStatus.ACTIVE);
-        when(groupRepo.findByIdAndStatus(10L, GroupStatus.ACTIVE)).thenReturn(Optional.of(g));
+    void acceptTransferRejectsWhenNotPending() {
+        Long groupId = 10L, ownerId = 1L;
+        FamilyGroupEntity group = group(groupId, ownerId, GroupStatus.ACTIVE);
+        when(groupRepo.findByIdAndStatus(groupId, GroupStatus.ACTIVE)).thenReturn(Optional.of(group));
 
         BusinessRuleViolationException ex = assertThrows(BusinessRuleViolationException.class,
-            () -> svc.transferOwnership(10L, 1L, 1L));
-        assertEquals("BR_25_SAME_OWNER", ex.getErrorCode());
-    }
+            () -> svc.acceptTransfer(groupId, 2L));
 
-    @Test
-    void transferOwnershipRejectsWhenNewOwnerNotMember() {
-        FamilyGroupEntity g = group(10L, 1L, GroupStatus.ACTIVE);
-        GroupMemberEntity oldOwner = member(10L, 1L, MemberRole.OWNER, MemberStatus.ACTIVE);
-        when(groupRepo.findByIdAndStatus(10L, GroupStatus.ACTIVE)).thenReturn(Optional.of(g));
-        when(memberRepo.findByGroupIdAndUserIdAndStatus(10L, 1L, MemberStatus.ACTIVE))
-            .thenReturn(Optional.of(oldOwner));
-        when(memberRepo.findByGroupIdAndUserIdAndStatus(10L, 2L, MemberStatus.ACTIVE))
-            .thenReturn(Optional.empty());
-
-        BusinessRuleViolationException ex = assertThrows(BusinessRuleViolationException.class,
-            () -> svc.transferOwnership(10L, 2L, 1L));
-        assertEquals("BR_24_NEW_OWNER_NOT_MEMBER", ex.getErrorCode());
-        assertEquals(HttpStatus.NOT_FOUND, ex.getHttpStatus());
+        assertEquals("TRANSFER_NOT_PENDING", ex.getErrorCode());
     }
 
     @Test
@@ -483,5 +507,39 @@ class FamilyGroupServiceTest {
 
         verify(memberRepo).saveAll(List.of(active));
         assertEquals(MemberStatus.EXCLUDED, alreadyExcluded.getStatus());
+    }
+
+    @Test
+    void excludeMemberSoftDeletesInvalidatesLimitsAndWritesMobileAudit() {
+        Long groupId = 10L, ownerId = 1L, targetId = 2L;
+        FamilyGroupEntity group = group(groupId, ownerId, GroupStatus.ACTIVE);
+        GroupMemberEntity target = member(groupId, targetId, MemberRole.MEMBER, MemberStatus.ACTIVE);
+        when(groupRepo.findByIdAndStatus(groupId, GroupStatus.ACTIVE)).thenReturn(Optional.of(group));
+        when(memberRepo.findByGroupIdAndUserIdAndStatus(groupId, targetId, MemberStatus.ACTIVE))
+            .thenReturn(Optional.of(target));
+        when(clock.instant()).thenReturn(now.toInstant());
+        when(auditService.log(eq(groupId), eq(ownerId), eq(targetId), eq(ActionType.MEMBER_EXCLUDED), any(), any()))
+            .thenReturn(new AuditLogEntity());
+
+        svc.excludeMember(groupId, targetId, ownerId);
+
+        assertEquals(MemberStatus.EXCLUDED, target.getStatus());
+        verify(userLimitService).invalidateMemberLimits(groupId, targetId);
+        verify(auditService).log(eq(groupId), eq(ownerId), eq(targetId), eq(ActionType.MEMBER_EXCLUDED), any(), any());
+        verify(auditService).save(any(AuditLogEntity.class));
+    }
+
+    @Test
+    void excludeMemberRejectsSelfExclusion() {
+        Long groupId = 10L, ownerId = 1L;
+        when(groupRepo.findByIdAndStatus(groupId, GroupStatus.ACTIVE))
+            .thenReturn(Optional.of(group(groupId, ownerId, GroupStatus.ACTIVE)));
+
+        BusinessRuleViolationException ex = assertThrows(BusinessRuleViolationException.class,
+            () -> svc.excludeMember(groupId, ownerId, ownerId));
+
+        assertEquals("CANNOT_EXCLUDE_SELF", ex.getErrorCode());
+        assertEquals(HttpStatus.CONFLICT, ex.getHttpStatus());
+        verifyNoInteractions(memberRepo, userLimitService, auditService);
     }
 }

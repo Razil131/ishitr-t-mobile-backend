@@ -11,15 +11,18 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import lombok.RequiredArgsConstructor;
-import ru.tmobile.backend.entity.FamilyGroupEntity;
-import ru.tmobile.backend.entity.GroupMemberEntity;
-import ru.tmobile.backend.entity.UserEntity;
+import ru.tmobile.backend.dto.familyGroup.TransferPendingInfo;
+import ru.tmobile.backend.dto.familyGroup.TransferPendingResponse;
 import ru.tmobile.backend.entity.AuditLogEntity.ActionType;
+import ru.tmobile.backend.entity.FamilyGroupEntity;
 import ru.tmobile.backend.entity.FamilyGroupEntity.GroupStatus;
+import ru.tmobile.backend.entity.GroupMemberEntity;
 import ru.tmobile.backend.entity.GroupMemberEntity.MemberRole;
 import ru.tmobile.backend.entity.GroupMemberEntity.MemberStatus;
-import ru.tmobile.backend.exception.BusinessRuleViolationException;
+import ru.tmobile.backend.entity.UserEntity;
+import ru.tmobile.backend.exception.AuthenticationException;
 import ru.tmobile.backend.exception.AuthorizationException;
+import ru.tmobile.backend.exception.BusinessRuleViolationException;
 import ru.tmobile.backend.repository.FamilyGroupRepository;
 import ru.tmobile.backend.repository.GroupMemberRepository;
 import ru.tmobile.backend.repository.GroupPackageBalanceRepository;
@@ -161,12 +164,6 @@ public class FamilyGroupService {
         }
     }
 
-    private void validateCallerIdentity(Long userId, Long callerId) {
-        if (callerId == null || !userId.equals(callerId)) {
-            throw new AuthorizationException("FORBIDDEN", "Cannot perform action on behalf of another user");
-        }
-    }
-
     private void validateAddMemberRequest(FamilyGroupEntity group, Long userId){
         Long groupId = group.getId();
 
@@ -217,69 +214,134 @@ public class FamilyGroupService {
         userLimitService.invalidateMemberLimits(groupId, targetUserId);
 
         OffsetDateTime now = virtualClock.instant().atZone(ZoneId.systemDefault()).toOffsetDateTime();
-        var audit = auditService.log(groupId, ownerId, targetUserId, ActionType.REMOVE_MEMBER, now, Map.of("previous_role","MEMBER"));
+        var audit = auditService.log(groupId, ownerId, targetUserId, ActionType.MEMBER_EXCLUDED, now, Map.of("previous_role","MEMBER"));
         auditService.save(audit);
 
     }
 
     @Transactional
-    public void leaveGroup(Long groupId, Long userId, Long callerId){
+    public void excludeMember(Long groupId, Long targetUserId, Long callerId) {
         FamilyGroupEntity group = familyGroupRepository.findByIdAndStatus(groupId, GroupStatus.ACTIVE)
-            .orElseThrow(() -> new BusinessRuleViolationException("GROUP_NOT_FOUND", "Group not found: " + groupId, HttpStatus.NOT_FOUND));
-        validateCallerIdentity(userId, callerId);
-        Long ownerId = group.getOwnerId();
-        if (userId.equals(ownerId)){
+            .orElseThrow(() -> new BusinessRuleViolationException(
+                "GROUP_NOT_FOUND", "Group not found" + groupId, HttpStatus.NOT_FOUND));;
+        validateOwnerAccess(group, callerId);
+
+        if (targetUserId.equals(group.getOwnerId())) {
             throw new BusinessRuleViolationException(
-                "BR_23_OWNER_LEAVE",
-                "Owner can't leave: " + ownerId,
-                HttpStatus.BAD_REQUEST
-            );
+                "CANNOT_EXCLUDE_SELF", "Owner cannot exclude himself", HttpStatus.CONFLICT);
         }
 
-        GroupMemberEntity user = groupMemberRepository.findByGroupIdAndUserIdAndStatus(groupId,userId,MemberStatus.ACTIVE)
-            .orElseThrow(() -> new BusinessRuleViolationException("USER_NOT_IN_TARGET_GROUP","user is not in the target group: " + groupId,HttpStatus.NOT_FOUND));
-
-        user.setStatus(MemberStatus.LEAVE);
-        groupMemberRepository.save(user);
-        userLimitService.invalidateMemberLimits(groupId, userId);
+        GroupMemberEntity target = groupMemberRepository
+            .findByGroupIdAndUserIdAndStatus(groupId, targetUserId, MemberStatus.ACTIVE)
+            .orElseThrow(() -> new BusinessRuleViolationException(
+                "MEMBER_NOT_ACTIVE", "Target member is not active", HttpStatus.CONFLICT));
+            
+        target.setStatus(MemberStatus.EXCLUDED);
+        groupMemberRepository.save(target);
+        userLimitService.invalidateMemberLimits(groupId, targetUserId);
 
         OffsetDateTime now = virtualClock.instant().atZone(ZoneId.systemDefault()).toOffsetDateTime();
-        var audit = auditService.log(groupId, userId, userId, ActionType.MEMBER_LEFT, now, Map.of("reason","voluntary"));
+        var audit = auditService.log(groupId, callerId, targetUserId, ActionType.MEMBER_EXCLUDED, now,
+            Map.of("previous_role", target.getRole().name()));
         auditService.save(audit);
-
     }
 
     @Transactional
-    public void transferOwnership(Long groupId, Long newOwnerId, Long callerId){
+    public void leaveGroup(Long groupId, Long callerId) {
+        if (callerId == null) {
+            throw new AuthenticationException("UNAUTHENTICATED", "User not authenticated");
+        }
+
+        FamilyGroupEntity group = familyGroupRepository.findByIdAndStatus(groupId, GroupStatus.ACTIVE)
+            .orElseThrow(() -> new BusinessRuleViolationException(
+                "GROUP_NOT_FOUND", "Group not found: " + groupId, HttpStatus.NOT_FOUND));
+
+        if (callerId.equals(group.getOwnerId())) {
+            throw new BusinessRuleViolationException(
+                "OWNER_CANNOT_LEAVE", "Owner cannot leave group", HttpStatus.CONFLICT);
+        }
+
+        GroupMemberEntity member = groupMemberRepository
+            .findByGroupIdAndUserIdAndStatus(groupId, callerId, MemberStatus.ACTIVE)
+            .orElseThrow(() -> new BusinessRuleViolationException(
+                "MEMBER_NOT_ACTIVE", "Member is not active", HttpStatus.CONFLICT));
+
+        member.setStatus(MemberStatus.LEAVE);
+        groupMemberRepository.save(member);
+        userLimitService.invalidateMemberLimits(groupId, callerId);
+
+        OffsetDateTime now = virtualClock.instant().atZone(ZoneId.systemDefault()).toOffsetDateTime();
+        var audit = auditService.log(groupId, callerId, callerId, ActionType.MEMBER_LEFT, now,
+            Map.of("reason", "voluntary"));
+        auditService.save(audit);
+    }
+
+    @Transactional
+    public TransferPendingResponse initiateTransfer(Long groupId, Long newOwnerId, Long callerId){
         FamilyGroupEntity group = familyGroupRepository.findByIdAndStatus(groupId, GroupStatus.ACTIVE)
             .orElseThrow(() -> new BusinessRuleViolationException("GROUP_NOT_FOUND", "Group not found: " + groupId, HttpStatus.NOT_FOUND));
         validateOwnerAccess(group, callerId);
-        Long oldOwnerId = group.getOwnerId();
 
-        if (newOwnerId.equals(oldOwnerId)){
+        if (group.getPendingTransfer() != null) {
             throw new BusinessRuleViolationException(
-                "BR_25_SAME_OWNER",
-                "Owner can't transfer ownership to himself: " + oldOwnerId,
-                HttpStatus.BAD_REQUEST
-            );
+                "TRANSFER_ALREADY_PENDING", "Transfer already pending", HttpStatus.CONFLICT);
         }
+
+        if (newOwnerId.equals(group.getOwnerId())) {
+            throw new BusinessRuleViolationException("TARGET_IS_OWNER", "Cannot transfer to current owner", HttpStatus.CONFLICT);
+        }
+
+        groupMemberRepository
+            .findByGroupIdAndUserIdAndStatus(groupId, newOwnerId, MemberStatus.ACTIVE)
+            .orElseThrow(() -> new BusinessRuleViolationException(
+                "MEMBER_NOT_ACTIVE", "Target member is not active", HttpStatus.CONFLICT));
+
+
+        OffsetDateTime now = virtualClock.instant().atZone(ZoneId.systemDefault()).toOffsetDateTime();
+        TransferPendingInfo pending = new TransferPendingInfo(group.getOwnerId(), newOwnerId, now);
+        group.setPendingTransfer(pending);
+        familyGroupRepository.save(group);
+
+        return new TransferPendingResponse(groupId, pending);
+    }
+
+    @Transactional 
+    public FamilyGroupEntity acceptTransfer(Long groupId, Long callerId) {
+        FamilyGroupEntity group = familyGroupRepository.findByIdAndStatus(groupId, GroupStatus.ACTIVE)
+            .orElseThrow(() -> new BusinessRuleViolationException(
+                "GROUP_NOT_FOUND", "Group not found: " + groupId, HttpStatus.NOT_FOUND));
+            
+        TransferPendingInfo pending = group.getPendingTransfer();
+        if (pending == null) {
+            throw new BusinessRuleViolationException("TRANSFER_NOT_PENDING", "No pending transfer", HttpStatus.CONFLICT);
+        }
+
+        if (!pending.toUserId().equals(callerId)) {
+            throw new AuthorizationException("FORBIDDEN", "Only target user can accept transfer");
+        }
+
+        Long oldOwnerId = group.getOwnerId();
+        Long newOwnerId = pending.toUserId();
+
         GroupMemberEntity oldOwner = groupMemberRepository.findByGroupIdAndUserIdAndStatus(groupId,oldOwnerId,MemberStatus.ACTIVE)
             .orElseThrow(() -> new BusinessRuleViolationException("USER_NOT_FOUND", "Old owner not found: " + oldOwnerId, HttpStatus.NOT_FOUND));
 
         GroupMemberEntity newOwner = groupMemberRepository.findByGroupIdAndUserIdAndStatus(groupId,newOwnerId,MemberStatus.ACTIVE)
-            .orElseThrow(() -> new BusinessRuleViolationException("BR_24_NEW_OWNER_NOT_MEMBER","user is not in the target group: " + groupId,HttpStatus.NOT_FOUND));
+            .orElseThrow(() -> new BusinessRuleViolationException("USER_NOT_FOUND", "New owner not found", HttpStatus.NOT_FOUND));
 
-        OffsetDateTime now = virtualClock.instant().atZone(ZoneId.systemDefault()).toOffsetDateTime();
         oldOwner.setRole(MemberRole.MEMBER);
         newOwner.setRole(MemberRole.OWNER);
         group.setOwnerId(newOwnerId);
+        group.setPendingTransfer(null);
         groupMemberRepository.saveAll(List.of(oldOwner, newOwner));
         familyGroupRepository.save(group);
 
+        OffsetDateTime now = virtualClock.instant().atZone(ZoneId.systemDefault()).toOffsetDateTime();
         var audit = auditService.log(groupId, oldOwnerId, newOwnerId, ActionType.OWNERSHIP_TRANSFERRED, now,
             Map.of("previous_owner_id", oldOwnerId, "new_owner_id", newOwnerId));
         auditService.save(audit);
-
+        
+        return group;
     }
 
     @Transactional

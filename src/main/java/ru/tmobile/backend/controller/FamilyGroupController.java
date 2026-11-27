@@ -1,39 +1,46 @@
 package ru.tmobile.backend.controller;
 
-import lombok.RequiredArgsConstructor;
+import java.util.List;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.validation.Valid;
-
+import lombok.RequiredArgsConstructor;
 import ru.tmobile.backend.dto.familyGroup.AddMemberRequest;
 import ru.tmobile.backend.dto.familyGroup.Contact;
 import ru.tmobile.backend.dto.familyGroup.ContactsResponse;
 import ru.tmobile.backend.dto.familyGroup.FamilyGroupCreateRequest;
 import ru.tmobile.backend.dto.familyGroup.FamilyGroupResponse;
 import ru.tmobile.backend.dto.familyGroup.GroupDetailResponse;
-import ru.tmobile.backend.dto.familyGroup.LeaveGroupRequest;
 import ru.tmobile.backend.dto.familyGroup.SetLimitRequest;
 import ru.tmobile.backend.dto.familyGroup.TransferOwnershipRequest;
+import ru.tmobile.backend.dto.familyGroup.TransferPendingResponse;
 import ru.tmobile.backend.dto.familyGroup.UserLimitResponse;
 import ru.tmobile.backend.entity.FamilyGroupEntity;
+import ru.tmobile.backend.entity.FamilyGroupEntity.GroupStatus;
 import ru.tmobile.backend.entity.GroupMemberEntity;
+import ru.tmobile.backend.entity.GroupMemberEntity.MemberStatus;
 import ru.tmobile.backend.exception.AuthenticationException;
 import ru.tmobile.backend.exception.AuthorizationException;
 import ru.tmobile.backend.exception.BusinessRuleViolationException;
-import ru.tmobile.backend.entity.FamilyGroupEntity.GroupStatus;
-import ru.tmobile.backend.entity.GroupMemberEntity.MemberStatus;
 import ru.tmobile.backend.repository.FamilyGroupRepository;
 import ru.tmobile.backend.repository.GroupMemberRepository;
 import ru.tmobile.backend.repository.UserRepository;
+import ru.tmobile.backend.security.AuthContext;
 import ru.tmobile.backend.service.FamilyGroupService;
 import ru.tmobile.backend.service.GroupDetailsService;
 import ru.tmobile.backend.service.UserLimitService;
-import ru.tmobile.backend.security.AuthContext;
 
-import java.util.List;
+
 
 @RestController
 @RequestMapping("/api/v1/groups")
@@ -92,19 +99,34 @@ public class FamilyGroupController {
         return ResponseEntity.noContent().build();
     }
 
-    @PostMapping("/{groupId}/leave")
-    public ResponseEntity<Void> leaveGroup(@PathVariable Long groupId, @Valid @RequestBody LeaveGroupRequest request) {
+    @PostMapping("/{groupId}/members/{userId}/exclude")
+    public ResponseEntity<Void> excludeMember(@PathVariable Long groupId, @PathVariable Long userId) {
         Long callerId = AuthContext.getUserId();
-        familyGroupService.leaveGroup(groupId, request.userId(), callerId);
+        familyGroupService.excludeMember(groupId, userId, callerId);
         return ResponseEntity.noContent().build();
     }
 
-    @PostMapping("/{groupId}/transfer-ownership")
-    public ResponseEntity<Void> transferOwnership(@PathVariable Long groupId, @Valid @RequestBody TransferOwnershipRequest request) {
+    @PostMapping("/{groupId}/leave")
+    public ResponseEntity<Void> leaveGroup(@PathVariable Long groupId) {
         Long callerId = AuthContext.getUserId();
-        familyGroupService.transferOwnership(groupId, request.newOwnerId(), callerId);
+        familyGroupService.leaveGroup(groupId, callerId);
         return ResponseEntity.noContent().build();
     }
+
+    @PostMapping("/{groupId}/transfer")
+    public ResponseEntity<TransferPendingResponse> initiateTransfer(@PathVariable Long groupId, @Valid @RequestBody TransferOwnershipRequest request) {
+        Long callerId = AuthContext.getUserId();
+        TransferPendingResponse response = familyGroupService.initiateTransfer(groupId, request.newOwnerId(), callerId);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/{groupId}/transfer/accept")
+    public ResponseEntity<GroupDetailResponse> acceptTransfer(@PathVariable Long groupId) {
+        Long callerId = AuthContext.getUserId();
+        FamilyGroupEntity group = familyGroupService.acceptTransfer(groupId, callerId);
+        return ResponseEntity.ok(groupDetailsService.toDetailResponse(group));
+    }
+    
 
     @PostMapping("/{groupId}/disband")
     public ResponseEntity<Void> disbandGroup(@PathVariable Long groupId) {

@@ -32,9 +32,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import ru.tmobile.backend.dto.familyGroup.AddMemberRequest;
 import ru.tmobile.backend.dto.familyGroup.FamilyGroupCreateRequest;
 import ru.tmobile.backend.dto.familyGroup.GroupDetailResponse;
-import ru.tmobile.backend.dto.familyGroup.LeaveGroupRequest;
 import ru.tmobile.backend.dto.familyGroup.SetLimitRequest;
 import ru.tmobile.backend.dto.familyGroup.TransferOwnershipRequest;
+import ru.tmobile.backend.dto.familyGroup.TransferPendingInfo;
+import ru.tmobile.backend.dto.familyGroup.TransferPendingResponse;
 import ru.tmobile.backend.dto.familyGroup.UserLimitResponse;
 import ru.tmobile.backend.entity.FamilyGroupEntity;
 import ru.tmobile.backend.entity.FamilyGroupEntity.GroupStatus;
@@ -227,27 +228,52 @@ class FamilyGroupControllerTest {
         verify(familyGroupService).removeMember(5L, 7L, null);
     }
 
-    @Test void leaveGroupReturns204() throws Exception {
-        mockMvc.perform(post("/api/v1/groups/5/leave")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(json.writeValueAsString(new LeaveGroupRequest(7L))))
+    @Test void leaveGroupReturns204AndUsesCallerIdFromAuthContext() throws Exception {
+        AuthContext.set(new AuthContext.UserContext(7L, "MEMBER"));
+
+        mockMvc.perform(post("/api/v1/groups/5/leave"))
             .andExpect(status().isNoContent());
-        verify(familyGroupService).leaveGroup(5L, 7L, null);
+
+        verify(familyGroupService).leaveGroup(5L, 7L);
     }
 
-    @Test void leaveGroupRejectsMissingUserId() throws Exception {
-        mockMvc.perform(post("/api/v1/groups/5/leave")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{}"))
-            .andExpect(status().isBadRequest());
+    @Test void leaveGroupReturns409WhenServiceThrowsConflict() throws Exception {
+        doThrow(new BusinessRuleViolationException("OWNER_CANNOT_LEAVE", "owner", HttpStatus.CONFLICT))
+            .when(familyGroupService).leaveGroup(eq(5L), any());
+
+        mockMvc.perform(post("/api/v1/groups/5/leave"))
+            .andExpect(status().isConflict());
     }
 
-    @Test void transferOwnershipReturns204() throws Exception {
-        mockMvc.perform(post("/api/v1/groups/5/transfer-ownership")
+    @Test void initiateTransferReturns200WithPendingInfo() throws Exception {
+        AuthContext.set(new AuthContext.UserContext(1L, "OWNER"));
+        TransferPendingResponse mockResponse = new TransferPendingResponse(
+            5L,
+            new TransferPendingInfo(1L, 2L, OffsetDateTime.of(2026, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC))
+        );
+        when(familyGroupService.initiateTransfer(eq(5L), eq(2L), eq(1L)))
+            .thenReturn(mockResponse);
+
+        mockMvc.perform(post("/api/v1/groups/5/transfer")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsString(new TransferOwnershipRequest(2L))))
-            .andExpect(status().isNoContent());
-        verify(familyGroupService).transferOwnership(5L, 2L, null);
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.group_id").value(5))
+            .andExpect(jsonPath("$.transfer.from_user_id").value(1))
+            .andExpect(jsonPath("$.transfer.to_user_id").value(2));
+        verify(familyGroupService).initiateTransfer(5L, 2L, 1L);
+    }
+
+    @Test void acceptTransferReturns200WithGroupDetail() throws Exception {
+        AuthContext.set(new AuthContext.UserContext(2L, "OWNER"));
+        FamilyGroupEntity group = grp(5L, 2L);
+        when(familyGroupService.acceptTransfer(eq(5L), eq(2L))).thenReturn(group);
+        when(groupDetailsService.toDetailResponse(group)).thenReturn(details(5L, 2L));
+
+        mockMvc.perform(post("/api/v1/groups/5/transfer/accept"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.owner_id").value(2));
+        verify(familyGroupService).acceptTransfer(5L, 2L);
     }
 
     @Test void disbandGroupReturns204() throws Exception {
@@ -366,5 +392,23 @@ class FamilyGroupControllerTest {
                 .content("{\"limit_value\":100.0}"))
             .andExpect(status().isBadRequest());
         verify(userLimitService, never()).setMemberLimit(any(), any(), any(), any(), any());
+    }
+
+    @Test void excludeMemberReturns204AndUsesCallerIdFromAuthContext() throws Exception {
+        AuthContext.set(new AuthContext.UserContext(1L, "OWNER"));
+
+        mockMvc.perform(post("/api/v1/groups/5/members/7/exclude"))
+            .andExpect(status().isNoContent());
+
+        verify(familyGroupService).excludeMember(5L, 7L, 1L);
+    }
+
+    @Test void excludeMemberReturns409WhenServiceThrowsConflict() throws Exception {
+        doThrow(new BusinessRuleViolationException("CANNOT_EXCLUDE_SELF", "self", HttpStatus.CONFLICT))
+            .when(familyGroupService).excludeMember(eq(5L), eq(1L), any());
+
+        mockMvc.perform(post("/api/v1/groups/5/members/1/exclude"))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.error.code").value("CANNOT_EXCLUDE_SELF"));
     }
 }

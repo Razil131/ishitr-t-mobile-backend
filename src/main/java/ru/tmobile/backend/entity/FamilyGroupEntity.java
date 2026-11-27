@@ -1,12 +1,19 @@
 package ru.tmobile.backend.entity;
 
-import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
+import java.time.OffsetDateTime;
+
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-import java.time.OffsetDateTime;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import lombok.Getter;
+import lombok.Setter;
+import ru.tmobile.backend.dto.familyGroup.TransferPendingInfo;
 
 @Entity
 @Table(name = "family_groups")
@@ -26,6 +33,10 @@ public class FamilyGroupEntity {
 
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "pending_transfer", columnDefinition = "jsonb")
+    private TransferPendingInfo pendingTransfer;
 
     public enum GroupStatus {
         ACTIVE, DISBANDED

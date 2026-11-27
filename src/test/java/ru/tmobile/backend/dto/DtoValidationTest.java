@@ -24,7 +24,6 @@ import ru.tmobile.backend.dto.auth.UpdateUserRequest;
 import ru.tmobile.backend.dto.auth.VerifyCodeRequest;
 import ru.tmobile.backend.dto.familyGroup.AddMemberRequest;
 import ru.tmobile.backend.dto.familyGroup.FamilyGroupCreateRequest;
-import ru.tmobile.backend.dto.familyGroup.LeaveGroupRequest;
 import ru.tmobile.backend.dto.familyGroup.TransferOwnershipRequest;
 
 class DtoValidationTest {
@@ -113,11 +112,6 @@ class DtoValidationTest {
     @Test void addMemberRequiresUserId() {
         assertFalse(validator.validate(new AddMemberRequest(null)).isEmpty());
         assertTrue(validator.validate(new AddMemberRequest(5L)).isEmpty());
-    }
-
-    @Test void leaveGroupRequiresUserId() {
-        assertFalse(validator.validate(new LeaveGroupRequest(null)).isEmpty());
-        assertTrue(validator.validate(new LeaveGroupRequest(5L)).isEmpty());
     }
 
     @Test void transferOwnershipRequiresNewOwnerId() {
